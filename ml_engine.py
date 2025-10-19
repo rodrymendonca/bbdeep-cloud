@@ -18,7 +18,7 @@ class MLEngine:
         
         self.label_encoder.fit(["azul", "vermelho", "empate"])
         
-        self.debug_mode = False  # Desativar debug na cloud
+        self.debug_mode = False
 
     def train_model(self, beads_data, statistics):
         total_beads = statistics.get("total_beads", 0)
@@ -26,7 +26,7 @@ class MLEngine:
         heuristic_result = self._train_heuristic_model(beads_data, statistics)
         
         ml_result = {"success": False}
-        if total_beads >= 20:  # Reduzido para cloud
+        if total_beads >= 20:
             ml_result = self._train_ml_model(beads_data, statistics)
         
         if ml_result["success"]:
@@ -50,12 +50,11 @@ class MLEngine:
             vermelho_count = statistics.get("vermelho_count", 0)
             empate_count = statistics.get("empate_count", 0)
             
-            # Probabilidades base
             azul_prob = (azul_count / total_beads) * 100
             vermelho_prob = (vermelho_count / total_beads) * 100
             empate_prob = (empate_count / total_beads) * 100
             
-            # Ajustar para garantir soma ~100%
+            # Ajustar para soma 100%
             total_prob = azul_prob + vermelho_prob + empate_prob
             if total_prob > 0:
                 azul_prob = (azul_prob / total_prob) * 100
@@ -70,7 +69,7 @@ class MLEngine:
             
             return {
                 "success": True,
-                "accuracy": 65.0,  # Accuracy fixa para heuristico
+                "accuracy": 65.0,
                 "predictions": predictions,
                 "training_examples": 0
             }
@@ -101,7 +100,6 @@ class MLEngine:
             self.ml_model.fit(X_train, y_train)
             accuracy = self.ml_model.score(X_test, y_test) * 100
             
-            # Fazer previsão para o próximo
             last_sequence = self._get_last_sequence(all_beads)
             if last_sequence is not None:
                 next_pred_proba = self.ml_model.predict_proba([last_sequence])[0]
@@ -147,7 +145,6 @@ class MLEngine:
             
             extended_features = list(features)
             
-            # Adicionar contagens
             for color_idx in range(len(self.label_encoder.classes_)):
                 extended_features.append(np.sum(features == color_idx))
             
@@ -165,7 +162,6 @@ class MLEngine:
         
         extended_features = list(bead_numbers)
         
-        # Adicionar contagens
         for color_idx in range(len(self.label_encoder.classes_)):
             extended_features.append(np.sum(bead_numbers == color_idx))
         
