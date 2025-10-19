@@ -395,6 +395,8 @@ class BBDeepMobile:
                     if new_prediction == current_prediction:
                         # Mantém a mesma previsão - INCREMENTAR GALE
                         self.state["gale_count"] += 1
+                        if self.state["gale_count"] > 2:
+                            self.state["gale_count"] = 0  # Reset após 2 gales
                     else:
                         # Mudou de previsão - RESETAR GALE
                         self.state["gale_count"] = 0
