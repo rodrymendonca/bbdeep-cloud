@@ -178,13 +178,18 @@ class BBDeepMobile:
         
         current_col = self.state["current_column"]
         
-        if not current_col or current_col[-1]["color"] != color or len(current_col) >= 6:
-            if current_col:
-                self.state["beads"].append(current_col.copy())
-                self.state["current_column"] = []
+        # CORREÇÃO: Sempre que a cor muda OU a coluna atingiu 6 beads, fecha a coluna atual
+        if current_col and (current_col[-1]["color"] != color or len(current_col) >= 6):
+            self.state["beads"].append(current_col.copy())
             self.state["current_column"] = [bead]
         else:
+            # Continua na mesma coluna
             self.state["current_column"].append(bead)
+        
+        # CORREÇÃO: Se a coluna atual atingiu 6 beads, fecha automaticamente
+        if len(self.state["current_column"]) >= 6:
+            self.state["beads"].append(self.state["current_column"].copy())
+            self.state["current_column"] = []
         
         self.state["last_color"] = color
         self.state["statistics"]["total_beads"] += 1
@@ -373,15 +378,18 @@ def main():
     .prediction-vermelho { border-color: #f44336; background-color: rgba(244, 67, 54, 0.1); }
     .prediction-empate { border-color: #ffc107; background-color: rgba(255, 193, 7, 0.1); }
     
-    /* NOVO CSS PARA BEADS VERTICAIS */
+    /* NOVO CSS PARA BEADS VERTICAIS - COMO NO ORIGINAL */
     .beads-vertical-container { display: flex; flex-direction: column; gap: 5px; margin: 10px 0; }
     .bead-vertical { width: 35px; height: 35px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; color: white; border: 2px solid white; font-size: 16px; margin-bottom: 5px; }
     .bead-vertical-azul { background-color: #2196f3; }
     .bead-vertical-vermelho { background-color: #f44336; }
-    .bead-vertical-empate { background-color: #ffc107; color: black; }
+    .bead-vertical-empate { background-color: #ffc107; color: black; font-size: 14px; }
     .columns-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(50px, 1fr)); gap: 10px; margin: 15px 0; }
     .column-vertical { display: flex; flex-direction: column; align-items: center; gap: 2px; }
     .column-label { font-size: 12px; color: #888; margin-bottom: 5px; }
+    
+    /* Estilo para mostrar o valor do empate */
+    .tie-value { font-size: 12px; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
     
@@ -402,7 +410,7 @@ def main():
         with col1:
             st.subheader("🎯 Registar Beads")
             
-            # Botões para beads - SEM rerun automático
+            # Botões para beads
             col1a, col1b, col1c = st.columns(3)
             with col1a:
                 if st.button("🔵 AZUL", use_container_width=True, key="btn_azul"):
@@ -411,10 +419,10 @@ def main():
                 if st.button("🔴 VERMELHO", use_container_width=True, key="btn_vermelho"):
                     app.register_bead('vermelho')
             with col1c:
+                # CORREÇÃO: Simplificar o registo de empates
+                tie_sum = st.selectbox("Soma para EMPATE:", [2,3,4,5,6,7,8,9,10,11,12], key="tie_select")
                 if st.button("🟡 EMPATE", use_container_width=True, key="btn_empate"):
-                    tie_sum = st.selectbox("Soma:", [2,3,4,5,6,7,8,9,10,11,12], key="tie_select")
-                    if st.button("✅ CONFIRMAR", use_container_width=True, key="confirm_empate"):
-                        app.register_bead('empate', tie_sum)
+                    app.register_bead('empate', tie_sum)
             
             # PRÓXIMA PREVISÃO
             st.subheader("🔮 Próxima Previsão")
@@ -444,8 +452,12 @@ def main():
                 beads_html = '<div class="bead-display">'
                 for bead in app.state["current_column"]:
                     color_class = f"bead-{bead['color']}"
-                    letter = bead['color'][0].upper()
-                    beads_html += f'<div class="bead {color_class}">{letter}</div>'
+                    # CORREÇÃO: Mostrar o valor do empate
+                    if bead['color'] == 'empate':
+                        display_text = str(bead.get('tie_sum', 'E'))
+                    else:
+                        display_text = bead['color'][0].upper()
+                    beads_html += f'<div class="bead {color_class}">{display_text}</div>'
                 beads_html += '</div>'
                 st.markdown(beads_html, unsafe_allow_html=True)
                 
@@ -482,32 +494,40 @@ def main():
             else:
                 st.info("Nenhuma aposta ativa")
             
-            # Histórico de colunas - AGORA VERTICAL COMO NO ORIGINAL.PNG
+            # Histórico de colunas - CORREÇÃO COMPLETA
             st.subheader("📚 Histórico de Colunas")
             if app.state["beads"]:
                 # Criar grid para as colunas verticais
                 st.markdown('<div class="columns-grid">', unsafe_allow_html=True)
                 
-                # Mostrar as últimas 6 colunas
-                for i, column in enumerate(reversed(app.state["beads"][-6:])):
-                    col_number = len(app.state["beads"]) - i
+                # Mostrar TODAS as colunas (ou as últimas 12 para não sobrecarregar)
+                display_columns = app.state["beads"][-12:]  # Últimas 12 colunas
+                
+                for i, column in enumerate(display_columns):
+                    col_number = len(app.state["beads"]) - len(display_columns) + i + 1
                     
                     st.markdown(f'''
                     <div class="column-vertical">
                         <div class="column-label">Coluna {col_number}</div>
                     ''', unsafe_allow_html=True)
                     
-                    # Adicionar beads verticais
+                    # Adicionar beads verticais - CORREÇÃO: Mostrar valor do empate
                     for bead in column:
                         color_class = f"bead-vertical-{bead['color']}"
-                        letter = bead['color'][0].upper()
-                        st.markdown(f'<div class="bead-vertical {color_class}">{letter}</div>', unsafe_allow_html=True)
+                        if bead['color'] == 'empate':
+                            display_text = str(bead.get('tie_sum', 'E'))
+                        else:
+                            display_text = bead['color'][0].upper()
+                        st.markdown(f'<div class="bead-vertical {color_class}">{display_text}</div>', unsafe_allow_html=True)
                     
                     st.markdown('</div>', unsafe_allow_html=True)
                 
                 st.markdown('</div>', unsafe_allow_html=True)
+                
+                # Mostrar estatísticas do histórico
+                st.write(f"**Total de colunas completas:** {len(app.state['beads'])}")
             else:
-                st.info("Nenhuma coluna completa")
+                st.info("Nenhuma coluna completa ainda")
     
     with tab2:
         col1, col2 = st.columns([1, 1])
