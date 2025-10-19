@@ -324,6 +324,21 @@ class BBDeepMobile:
             return True
         return False
 
+    def get_next_prediction(self):
+        """Obter a próxima previsão com base no modelo ML"""
+        if not self.state["ml_model"]["trained"]:
+            return None, 0
+        
+        predictions = self.state["ml_model"]["predictions"]
+        if not predictions:
+            return None, 0
+        
+        # Encontrar a cor com maior probabilidade
+        max_color = max(predictions, key=predictions.get)
+        confidence = predictions[max_color]
+        
+        return max_color, confidence
+
     def save_state(self):
         self.data_manager.save_data(self.state, "app_state.json")
 
@@ -395,6 +410,8 @@ def main():
             font-size: 14px;
         }
     }
+    
+    /* Estilos para as beads */
     .bead-display {
         display: flex;
         flex-wrap: wrap;
@@ -402,8 +419,8 @@ def main():
         margin: 10px 0;
     }
     .bead {
-        width: 30px;
-        height: 30px;
+        width: 35px;
+        height: 35px;
         border-radius: 50%;
         display: flex;
         align-items: center;
@@ -411,17 +428,46 @@ def main():
         font-weight: bold;
         color: white;
         border: 2px solid white;
+        font-size: 16px;
     }
     .bead-azul { background-color: #2196f3; }
     .bead-vermelho { background-color: #f44336; }
     .bead-empate { background-color: #ffc107; color: black; }
     
+    /* Estilos para colunas */
     .column-container {
-        border: 1px solid #ddd;
-        border-radius: 10px;
+        border: 2px solid #444;
+        border-radius: 8px;
         padding: 10px;
-        margin: 5px 0;
-        background-color: #f9f9f9;
+        margin: 8px 0;
+        background-color: #1a1a1a;
+    }
+    .column-header {
+        font-weight: bold;
+        margin-bottom: 8px;
+        color: #fff;
+    }
+    
+    /* Previsão próxima */
+    .prediction-box {
+        border: 3px solid;
+        border-radius: 10px;
+        padding: 15px;
+        text-align: center;
+        margin: 10px 0;
+        font-weight: bold;
+        font-size: 18px;
+    }
+    .prediction-azul { border-color: #2196f3; background-color: rgba(33, 150, 243, 0.1); }
+    .prediction-vermelho { border-color: #f44336; background-color: rgba(244, 67, 54, 0.1); }
+    .prediction-empate { border-color: #ffc107; background-color: rgba(255, 193, 7, 0.1); }
+    
+    /* Grid para colunas históricas */
+    .columns-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+        gap: 10px;
+        margin: 15px 0;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -438,7 +484,7 @@ def main():
         col1, col2 = st.columns([1, 1])
         
         with col1:
-            st.subheader("Registar Beads")
+            st.subheader("🎯 Registar Beads")
             
             # Botões para beads
             col1a, col1b, col1c = st.columns(3)
@@ -457,9 +503,31 @@ def main():
                         app.register_bead('empate', tie_sum)
                         st.rerun()
             
+            # PRÓXIMA PREVISÃO
+            st.subheader("🔮 Próxima Previsão")
+            next_color, confidence = app.get_next_prediction()
+            
+            if next_color:
+                color_name = {"azul": "AZUL", "vermelho": "VERMELHO", "empate": "EMPATE"}
+                color_class = f"prediction-{next_color}"
+                color_emoji = {"azul": "🔵", "vermelho": "🔴", "empate": "🟡"}
+                
+                st.markdown(f"""
+                <div class="prediction-box {color_class}">
+                    <div style="font-size: 24px; margin-bottom: 10px;">{color_emoji[next_color]}</div>
+                    <div>{color_name[next_color]}</div>
+                    <div style="font-size: 14px; margin-top: 5px;">{confidence:.1f}% confiança</div>
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.info("🤖 Treine o modelo ML para obter previsões")
+            
             # Display da coluna atual
-            st.subheader("🎯 Coluna Atual (em construção)")
+            st.subheader("📝 Coluna Atual")
             if app.state["current_column"]:
+                st.markdown('<div class="column-container">', unsafe_allow_html=True)
+                st.markdown('<div class="column-header">Coluna em Construção</div>', unsafe_allow_html=True)
+                
                 beads_html = '<div class="bead-display">'
                 for bead in app.state["current_column"]:
                     color_class = f"bead-{bead['color']}"
@@ -467,28 +535,11 @@ def main():
                     beads_html += f'<div class="bead {color_class}">{letter}</div>'
                 beads_html += '</div>'
                 st.markdown(beads_html, unsafe_allow_html=True)
-                st.write(f"**Beads na coluna:** {len(app.state['current_column'])}/6")
+                
+                st.write(f"**Progresso:** {len(app.state['current_column'])}/6 beads")
+                st.markdown('</div>', unsafe_allow_html=True)
             else:
                 st.info("Nenhum bead na coluna atual")
-            
-            # Histórico de colunas completas
-            st.subheader("📚 Histórico de Colunas")
-            if app.state["beads"]:
-                # Mostrar as últimas 5 colunas (mais recente primeiro)
-                for i, column in enumerate(reversed(app.state["beads"][-5:])):
-                    with st.container():
-                        st.markdown(f'<div class="column-container">', unsafe_allow_html=True)
-                        st.write(f"**Coluna {len(app.state['beads']) - i}**")
-                        beads_html = '<div class="bead-display">'
-                        for bead in column:
-                            color_class = f"bead-{bead['color']}"
-                            letter = bead['color'][0].upper()
-                            beads_html += f'<div class="bead {color_class}">{letter}</div>'
-                        beads_html += '</div>'
-                        st.markdown(beads_html, unsafe_allow_html=True)
-                        st.markdown('</div>', unsafe_allow_html=True)
-            else:
-                st.info("Nenhuma coluna completa no histórico")
         
         with col2:
             st.subheader("💰 Fazer Aposta")
@@ -520,6 +571,28 @@ def main():
                     st.write(f"{emoji} **{bet['color'].upper()}**: {bet['amount']:.1f}x")
             else:
                 st.info("Nenhuma aposta ativa")
+            
+            # HISTÓRICO DE COLUNAS (VERTICAL como na app original)
+            st.subheader("📚 Histórico de Colunas")
+            if app.state["beads"]:
+                # Mostrar colunas da mais recente para a mais antiga
+                for i, column in enumerate(reversed(app.state["beads"])):
+                    if i >= 8:  # Limitar a 8 colunas no display
+                        break
+                    
+                    st.markdown('<div class="column-container">', unsafe_allow_html=True)
+                    st.markdown(f'<div class="column-header">Coluna {len(app.state["beads"]) - i}</div>', unsafe_allow_html=True)
+                    
+                    beads_html = '<div class="bead-display">'
+                    for bead in column:
+                        color_class = f"bead-{bead['color']}"
+                        letter = bead['color'][0].upper()
+                        beads_html += f'<div class="bead {color_class}">{letter}</div>'
+                    beads_html += '</div>'
+                    st.markdown(beads_html, unsafe_allow_html=True)
+                    st.markdown('</div>', unsafe_allow_html=True)
+            else:
+                st.info("Nenhuma coluna completa no histórico")
     
     with tab2:
         col1, col2 = st.columns([1, 1])
@@ -555,9 +628,9 @@ def main():
             st.metric("🔴 Seq Vermelho", app.state['statistics']['seq_vermelho'])
             st.metric("🟡 Seq Empate", app.state['statistics']['seq_empate'])
             
-            # Previsões ML
+            # Previsões ML detalhadas
             if app.state["ml_model"]["trained"]:
-                st.subheader("🤖 Previsões ML")
+                st.subheader("🤖 Previsões Detalhadas")
                 pred = app.state["ml_model"]["predictions"]
                 col_pred1, col_pred2, col_pred3 = st.columns(3)
                 with col_pred1:
@@ -566,6 +639,8 @@ def main():
                     st.metric("🔴 Vermelho", f"{pred['vermelho']:.1f}%")
                 with col_pred3:
                     st.metric("🟡 Empate", f"{pred['empate']:.1f}%")
+                
+                st.metric("🎯 Precisão do Modelo", f"{app.state['ml_model']['accuracy']:.1f}%")
     
     with tab3:
         col1, col2 = st.columns([1, 1])
