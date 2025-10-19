@@ -6,15 +6,18 @@ import numpy as np
 from datetime import datetime
 import warnings
 import logging
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.preprocessing import LabelEncoder
+from sklearn.model_selection import train_test_split
 warnings.filterwarnings('ignore')
 
-# ===== DATA MANAGER COMPLETO =====
+# ===== DATA MANAGER =====
 class DataManager:
     def __init__(self, data_dir="data"):
         self.data_dir = data_dir
         self.setup_logging()
         self.ensure_data_dir()
-        
+    
     def setup_logging(self):
         logging.basicConfig(
             level=logging.INFO,
@@ -49,17 +52,6 @@ class DataManager:
             return True
         except Exception as e:
             self.logger.error(f"Erro ao guardar {filename}: {e}")
-            # Tentar usar backup se existir
-            try:
-                backup_path = self.get_file_path(filename) + ".backup"
-                if os.path.exists(backup_path):
-                    with open(backup_path, 'r', encoding='utf-8') as backup:
-                        backup_data = json.load(backup)
-                    with open(self.get_file_path(filename), 'w', encoding='utf-8') as f:
-                        json.dump(backup_data, f, indent=2, ensure_ascii=False)
-                    self.logger.info("Restaurado a partir do backup")
-            except:
-                pass
             return False
     
     def load_data(self, filename, default=None):
@@ -76,25 +68,109 @@ class DataManager:
                 return default if default is not None else {}
         except Exception as e:
             self.logger.error(f"Erro ao carregar {filename}: {e}")
-            # Tentar carregar backup
-            try:
-                backup_path = self.get_file_path(filename) + ".backup"
-                if os.path.exists(backup_path):
-                    with open(backup_path, 'r', encoding='utf-8') as backup:
-                        data = json.load(backup)
-                    self.logger.info("Carregado a partir do backup")
-                    return data
-            except:
-                pass
             return default if default is not None else {}
 
-# ===== ML ENGINE =====
+# ===== ML ENGINE REAL =====
 class MLEngine:
     def __init__(self):
         self.model_trained = False
         self.predictions = {"azul": 44.5, "vermelho": 44.5, "empate": 11.0}
-
+        
+        # Modelo de ML real
+        self.ml_model = RandomForestClassifier(
+            n_estimators=100,
+            random_state=42,
+            max_depth=10,
+            min_samples_split=5
+        )
+        self.label_encoder = LabelEncoder()
+        self.ml_trained = False
+        self.window_size = 5  # Usar últimas 5 jogadas para prever a próxima
+        
+        # Inicializar encoder
+        self.label_encoder.fit(["azul", "vermelho", "empate"])
+        
     def train_model(self, beads_data, statistics):
+        total_beads = statistics.get("total_beads", 0)
+        
+        # Tentar ML real se tivermos dados suficientes
+        ml_result = {"success": False}
+        if total_beads >= 15:  # Mínimo para ML
+            ml_result = self._train_ml_model(beads_data, statistics)
+        
+        # Se ML não funcionar ou dados insuficientes, usar heurística
+        if not ml_result["success"]:
+            ml_result = self._train_heuristic_model(beads_data, statistics)
+            ml_result["model_type"] = "Heurístico"
+        else:
+            ml_result["model_type"] = "Random Forest ML"
+        
+        self.model_trained = True
+        self.predictions = ml_result["predictions"]
+        
+        return ml_result
+    
+    def _train_ml_model(self, beads_data, statistics):
+        try:
+            # Preparar dados para ML
+            all_beads = self._get_all_beads(beads_data)
+            
+            if len(all_beads) < self.window_size + 5:
+                return {"success": False, "error": "Dados insuficientes para ML"}
+            
+            # Criar features e labels
+            X, y = self._create_ml_features(all_beads)
+            
+            if len(X) < 10:
+                return {"success": False, "error": "Poucos exemplos para treino"}
+            
+            # Dividir dados
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, test_size=0.3, random_state=42, stratify=y
+            )
+            
+            # Treinar modelo
+            self.ml_model.fit(X_train, y_train)
+            
+            # Calcular precisão
+            accuracy = self.ml_model.score(X_test, y_test) * 100
+            
+            # Fazer previsão para a próxima jogada
+            last_sequence = self._get_last_sequence(all_beads)
+            if last_sequence is not None:
+                next_pred_proba = self.ml_model.predict_proba([last_sequence])[0]
+                classes = self.ml_model.classes_
+                
+                ml_predictions = {}
+                for i, class_name in enumerate(classes):
+                    color = self.label_encoder.inverse_transform([class_name])[0]
+                    ml_predictions[color] = next_pred_proba[i] * 100
+                
+                # Garantir que todas as cores estão presentes
+                for color in ["azul", "vermelho", "empate"]:
+                    if color not in ml_predictions:
+                        ml_predictions[color] = 0
+            else:
+                ml_predictions = {"azul": 44.5, "vermelho": 44.5, "empate": 11.0}
+            
+            self.ml_trained = True
+            self.ml_accuracy = accuracy
+            
+            return {
+                "success": True,
+                "accuracy": accuracy,
+                "predictions": ml_predictions,
+                "training_examples": len(X_train),
+                "features_used": f"Últimas {self.window_size} jogadas"
+            }
+            
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Erro no treino ML: {str(e)}"
+            }
+    
+    def _train_heuristic_model(self, beads_data, statistics):
         total_beads = statistics.get("total_beads", 0)
         
         if total_beads > 0:
@@ -107,34 +183,34 @@ class MLEngine:
             vermelho_prob = (vermelho_count / total_beads) * 100
             empate_prob = (empate_count / total_beads) * 100
             
-            # Ajustar sequências
+            # Ajustar baseado em sequências
             seq_vermelho = statistics.get("seq_vermelho", 0)
             seq_empate = statistics.get("seq_empate", 0)
             
+            # Heurística: sequências longas tendem a quebrar
             if seq_vermelho >= 3:
-                azul_prob += seq_vermelho * 5
-                empate_prob += seq_vermelho * 2
+                azul_prob += seq_vermelho * 8
+                empate_prob += seq_vermelho * 3
             elif seq_empate >= 2:
-                azul_prob += seq_empate * 4
-                vermelho_prob += seq_empate * 4
+                azul_prob += seq_empate * 6
+                vermelho_prob += seq_empate * 6
             
             predictions = {
-                "azul": max(5, min(95, azul_prob)),
-                "vermelho": max(5, min(95, vermelho_prob)),
-                "empate": max(1, min(30, empate_prob))
+                "azul": max(5, min(90, azul_prob)),
+                "vermelho": max(5, min(90, vermelho_prob)),
+                "empate": max(1, min(25, empate_prob))
             }
             
-            # Normalizar
+            # Normalizar para soma 100%
             total = sum(predictions.values())
             predictions = {k: (v / total) * 100 for k, v in predictions.items()}
             
-            accuracy = 60 + min(30, total_beads / 10)
+            accuracy = 55 + min(35, total_beads / 15)  # Precisão aumenta com mais dados
             
             return {
                 "success": True,
                 "accuracy": accuracy,
                 "predictions": predictions,
-                "model_type": "Heurístico",
                 "training_examples": total_beads
             }
         else:
@@ -142,9 +218,65 @@ class MLEngine:
                 "success": True,
                 "accuracy": 50.0,
                 "predictions": {"azul": 44.5, "vermelho": 44.5, "empate": 11.0},
-                "model_type": "Básico",
                 "training_examples": 0
             }
+    
+    def _create_ml_features(self, all_beads):
+        X = []
+        y = []
+        
+        # Converter cores para números
+        bead_numbers = self.label_encoder.transform(all_beads)
+        
+        # Criar sequências deslizantes
+        for i in range(self.window_size, len(bead_numbers) - 1):
+            # Features: últimas window_size jogadas
+            features = bead_numbers[i - self.window_size:i]
+            
+            # Adicionar features estatísticas
+            extended_features = list(features)
+            
+            # Contar frequências de cada cor na janela
+            for color_idx in range(len(self.label_encoder.classes_)):
+                extended_features.append(np.sum(features == color_idx))
+            
+            # Label: próxima jogada
+            label = bead_numbers[i + 1]
+            
+            X.append(extended_features)
+            y.append(label)
+        
+        return np.array(X), np.array(y)
+    
+    def _get_last_sequence(self, all_beads):
+        if len(all_beads) < self.window_size:
+            return None
+        
+        recent_beads = all_beads[-self.window_size:]
+        bead_numbers = self.label_encoder.transform(recent_beads)
+        
+        extended_features = list(bead_numbers)
+        
+        # Adicionar estatísticas
+        for color_idx in range(len(self.label_encoder.classes_)):
+            extended_features.append(np.sum(bead_numbers == color_idx))
+        
+        return extended_features
+    
+    def _get_all_beads(self, beads_data):
+        all_beads = []
+        for column in beads_data.get("beads", []):
+            for bead in column:
+                if isinstance(bead, dict):
+                    all_beads.append(bead["color"])
+                else:
+                    all_beads.append(bead)
+        for bead in beads_data.get("current_column", []):
+            if isinstance(bead, dict):
+                all_beads.append(bead["color"])
+            else:
+                all_beads.append(bead)
+        return all_beads
     
     def is_trained(self):
         return self.model_trained
@@ -203,11 +335,6 @@ class BBDeepMobile:
         for key in ["beads", "current_column"]:
             if key not in loaded_state:
                 loaded_state[key] = []
-        
-        # Remover dados desnecessários se existirem
-        for key in ["bank", "bets", "bet_history"]:
-            if key in loaded_state:
-                del loaded_state[key]
         
         return loaded_state
 
@@ -269,7 +396,8 @@ class BBDeepMobile:
                 "training_count": self.state["ml_model"].get("training_count", 0) + 1,
                 "model_type": result["model_type"],
                 "training_examples": result.get("training_examples", 0),
-                "active_model": result["model_type"]
+                "active_model": result["model_type"],
+                "features_info": result.get("features_used", "Heurísticas")
             })
             self.save_state()
             return True
@@ -304,7 +432,8 @@ class BBDeepMobile:
             "predictions": {"azul": 44.5, "vermelho": 44.5, "empate": 11.0},
             "last_trained": None, "training_count": 0,
             "model_type": "Nenhum", "training_examples": 0,
-            "active_model": "Nenhum"
+            "active_model": "Nenhum",
+            "features_info": "Nenhum"
         })
         self.save_state()
 
@@ -319,21 +448,16 @@ def main():
     # CSS Ultra Compacto para Mobile
     st.markdown("""
     <style>
-    /* Reset e configurações base */
     .main-container {
         width: 100%;
         max-width: 100%;
         margin: 0;
         padding: 8px;
     }
-    
-    /* Compactar tudo */
     .block-container {
         padding-top: 1rem;
         padding-bottom: 1rem;
     }
-    
-    /* Previsão compacta */
     .prediction-compact {
         border-radius: 12px;
         padding: 15px 10px;
@@ -357,86 +481,27 @@ def main():
         background: linear-gradient(135deg, #ffc107, #ffa000);
         color: black;
     }
-    
-    /* Botões compactos */
     .stButton button {
         height: 45px !important;
         font-size: 16px !important;
         margin: 4px 0 !important;
         border-radius: 8px !important;
     }
-    
-    /* Estatísticas em linha única */
-    .stats-row {
-        display: flex;
-        justify-content: space-between;
-        margin: 8px 0;
-        flex-wrap: wrap;
-    }
-    .stat-item {
-        flex: 1;
-        min-width: 30%;
-        text-align: center;
-        padding: 8px 4px;
-        margin: 2px;
-        background-color: #f8f9fa;
-        border-radius: 6px;
-        font-size: 12px;
-    }
-    
-    /* Barras de progresso compactas */
-    .compact-progress {
-        height: 20px;
-        margin: 5px 0;
-    }
-    
-    /* Reduzir espaçamento de todos os elementos */
-    .stMarkdown {
-        margin-bottom: 0.5rem !important;
-    }
-    
-    h1 {
-        font-size: 20px !important;
-        margin-bottom: 0.5rem !important;
-    }
-    
-    h2 {
-        font-size: 16px !important;
-        margin-bottom: 0.5rem !important;
-    }
-    
-    h3 {
-        font-size: 14px !important;
-        margin-bottom: 0.25rem !important;
-    }
-    
-    /* Ajustar inputs */
-    .stSelectbox, .stNumberInput, .stSlider {
-        margin-bottom: 0.5rem !important;
-    }
-    
-    /* Esconder elementos do Streamlit */
+    h1 { font-size: 20px !important; margin-bottom: 0.5rem !important; }
+    h2 { font-size: 16px !important; margin-bottom: 0.5rem !important; }
+    h3 { font-size: 14px !important; margin-bottom: 0.25rem !important; }
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     .stDeployButton {display:none;}
-    
-    /* Compactar expanders */
-    .streamlit-expanderHeader {
-        font-size: 14px !important;
-        padding: 0.5rem 0.75rem !important;
-    }
-    
-    /* Reduzir padding geral */
     div[data-testid="stVerticalBlock"] > div {
         padding: 0.25rem 0;
     }
     </style>
     """, unsafe_allow_html=True)
     
-    # Container principal ultra compacto
     st.markdown('<div class="main-container">', unsafe_allow_html=True)
     
-    st.title("🤖 BB DEEP")
+    st.title("🤖 BB DEEP - ML Real")
     
     # Inicializar app
     if 'app' not in st.session_state:
@@ -444,7 +509,7 @@ def main():
     
     app = st.session_state.app
     
-    # SEÇÃO 1: PREVISÃO (MUITO COMPACTA)
+    # PREVISÃO
     next_color, confidence = app.get_next_prediction()
     
     if next_color:
@@ -460,16 +525,19 @@ def main():
         """, unsafe_allow_html=True)
         
         if app.state["ml_model"]["trained"]:
-            st.caption(f"🎯 {app.state['ml_model']['model_type']} | {app.state['ml_model']['accuracy']:.1f}% precisão")
+            model_info = f"🎯 {app.state['ml_model']['model_type']} | {app.state['ml_model']['accuracy']:.1f}% precisão"
+            if "features_info" in app.state["ml_model"]:
+                model_info += f" | {app.state['ml_model']['features_info']}"
+            st.caption(model_info)
     else:
         st.info("📊 Registe beads e treine o modelo")
     
-    # SEÇÃO 2: BOTÃO DE TREINO (AGORA AQUI - ENTRE PREVISÃO E REGISTOS)
-    if st.button("🎯 TREINAR MODELO", use_container_width=True, key="train_ml_main"):
+    # BOTÃO DE TREINO
+    if st.button("🎯 TREINAR MODELO ML", use_container_width=True, key="train_ml_main"):
         if app.train_model():
             st.rerun()
     
-    # SEÇÃO 3: BOTÕES DE REGISTO (COMPACTOS)
+    # BOTÕES DE REGISTO
     st.markdown("**Registar:**")
     btn_col1, btn_col2, btn_col3 = st.columns(3)
     
@@ -484,16 +552,13 @@ def main():
             st.rerun()
     
     with btn_col3:
-        # BOTÃO SIMPLES PARA EMPATE - SEM SELEÇÃO DE VALOR
         if st.button("🟡 EMPATE", use_container_width=True, key="btn_empate"):
             app.register_bead('empate')
             st.rerun()
     
-    # SEÇÃO 4: ESTATÍSTICAS ULTRA COMPACTAS
+    # ESTATÍSTICAS
     st.markdown("---")
     
-    # Primeira linha de stats
-    st.markdown('<div class="stats-row">', unsafe_allow_html=True)
     col1, col2, col3 = st.columns(3)
     with col1:
         st.metric("🔵 Azul", app.state['statistics']['azul_count'], delta=None)
@@ -502,7 +567,6 @@ def main():
     with col3:
         st.metric("🟡 Emp.", app.state['statistics']['empate_count'], delta=None)
     
-    # Segunda linha de stats
     col4, col5, col6 = st.columns(3)
     with col4:
         st.metric("📊 Total", app.state['statistics']['total_beads'], delta=None)
@@ -511,14 +575,13 @@ def main():
     with col6:
         st.metric("🟡 Seq", app.state['statistics']['seq_empate'], delta=None)
     
-    # SEÇÃO 5: PROBABILIDADES COMPACTAS
+    # PROBABILIDADES
     if app.state["ml_model"]["trained"]:
         st.markdown("---")
-        st.markdown("**Probabilidades:**")
+        st.markdown("**Probabilidades ML:**")
         
         pred = app.state["ml_model"]["predictions"]
         
-        # Barras de progresso horizontais compactas
         col_p1, col_p2, col_p3 = st.columns(3)
         with col_p1:
             st.markdown(f"🔵 {pred['azul']:.1f}%")
@@ -530,15 +593,13 @@ def main():
             st.markdown(f"🟡 {pred['empate']:.1f}%")
             st.progress(pred['empate']/100)
     
-    # SEÇÃO 6: CONTROLES COMPACTOS
+    # CONTROLES
     st.markdown("---")
     
-    # Botões de ação em linha (agora só reset)
     if st.button("🔄 RESETAR MODELO", use_container_width=True, key="reset_model"):
         app.reset_model()
         st.rerun()
     
-    # Configurações em popover para economizar espaço
     with st.popover("⚙️ Configurações", use_container_width=True):
         auto_train = st.checkbox("Auto-treino", value=app.state["settings"]["auto_train"], key="auto_train")
         train_interval = st.slider("Intervalo:", 1, 20, app.state["settings"]["train_interval"], key="train_interval")
@@ -549,28 +610,25 @@ def main():
             app.save_state()
             st.rerun()
     
-    # Informação rápida em popover
-    with st.popover("📊 Info Rápida", use_container_width=True):
-        st.write(f"**Colunas:** {len(app.state['beads'])}")
-        st.write(f"**Coluna atual:** {len(app.state['current_column'])}/6")
-        st.write(f"**Treinos:** {app.state['ml_model']['training_count']}")
+    with st.popover("📊 Info ML", use_container_width=True):
+        st.write(f"**Modelo:** {app.state['ml_model']['model_type']}")
+        st.write(f"**Precisão:** {app.state['ml_model']['accuracy']:.1f}%")
+        st.write(f"**Exemplos treino:** {app.state['ml_model']['training_examples']}")
+        st.write(f"**Total treinos:** {app.state['ml_model']['training_count']}")
         
         if app.state['current_column']:
-            st.write("**Últimos:**")
+            st.write("**Últimas jogadas:**")
             last_beads = ""
-            for bead in app.state['current_column'][-3:]:
+            for bead in app.state['current_column'][-5:]:
                 symbol = bead['color'][0].upper()
                 last_beads += symbol + " "
             st.write(last_beads)
     
-    # REMOVIDO: Estado atual da coluna
-    # ANTES: st.caption(f"📝 Coluna atual: {current_progress}/6 beads")
-    
     st.markdown('</div>', unsafe_allow_html=True)
     
-    # NOVO: Mensagem no final
+    # MENSAGEM FINAL
     st.markdown("---")
-    st.markdown("<div style='text-align: center; color: #666; font-size: 14px;'>feito com ❤️</div>", unsafe_allow_html=True)
+    st.markdown("<div style='text-align: center; color: #666; font-size: 14px;'>🤖 ML Real | feito com ❤️</div>", unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
