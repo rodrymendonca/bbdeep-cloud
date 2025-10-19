@@ -372,6 +372,16 @@ def main():
     .prediction-azul { border-color: #2196f3; background-color: rgba(33, 150, 243, 0.1); }
     .prediction-vermelho { border-color: #f44336; background-color: rgba(244, 67, 54, 0.1); }
     .prediction-empate { border-color: #ffc107; background-color: rgba(255, 193, 7, 0.1); }
+    
+    /* NOVO CSS PARA BEADS VERTICAIS */
+    .beads-vertical-container { display: flex; flex-direction: column; gap: 5px; margin: 10px 0; }
+    .bead-vertical { width: 35px; height: 35px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; color: white; border: 2px solid white; font-size: 16px; margin-bottom: 5px; }
+    .bead-vertical-azul { background-color: #2196f3; }
+    .bead-vertical-vermelho { background-color: #f44336; }
+    .bead-vertical-empate { background-color: #ffc107; color: black; }
+    .columns-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(50px, 1fr)); gap: 10px; margin: 15px 0; }
+    .column-vertical { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+    .column-label { font-size: 12px; color: #888; margin-bottom: 5px; }
     </style>
     """, unsafe_allow_html=True)
     
@@ -472,23 +482,30 @@ def main():
             else:
                 st.info("Nenhuma aposta ativa")
             
-            # Histórico de colunas
+            # Histórico de colunas - AGORA VERTICAL COMO NO ORIGINAL.PNG
             st.subheader("📚 Histórico de Colunas")
             if app.state["beads"]:
-                for i, column in enumerate(reversed(app.state["beads"])):
-                    if i >= 6: break
+                # Criar grid para as colunas verticais
+                st.markdown('<div class="columns-grid">', unsafe_allow_html=True)
+                
+                # Mostrar as últimas 6 colunas
+                for i, column in enumerate(reversed(app.state["beads"][-6:])):
+                    col_number = len(app.state["beads"]) - i
                     
-                    st.markdown('<div class="column-container">', unsafe_allow_html=True)
-                    st.markdown(f'<div class="column-header">Coluna {len(app.state["beads"]) - i}</div>', unsafe_allow_html=True)
+                    st.markdown(f'''
+                    <div class="column-vertical">
+                        <div class="column-label">Coluna {col_number}</div>
+                    ''', unsafe_allow_html=True)
                     
-                    beads_html = '<div class="bead-display">'
+                    # Adicionar beads verticais
                     for bead in column:
-                        color_class = f"bead-{bead['color']}"
+                        color_class = f"bead-vertical-{bead['color']}"
                         letter = bead['color'][0].upper()
-                        beads_html += f'<div class="bead {color_class}">{letter}</div>'
-                    beads_html += '</div>'
-                    st.markdown(beads_html, unsafe_allow_html=True)
+                        st.markdown(f'<div class="bead-vertical {color_class}">{letter}</div>', unsafe_allow_html=True)
+                    
                     st.markdown('</div>', unsafe_allow_html=True)
+                
+                st.markdown('</div>', unsafe_allow_html=True)
             else:
                 st.info("Nenhuma coluna completa")
     
