@@ -7,8 +7,13 @@ from datetime import datetime
 import warnings
 import logging
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.svm import SVC
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import Dataset, DataLoader
 warnings.filterwarnings('ignore')
 
 # ===== DATA MANAGER =====
@@ -72,25 +77,56 @@ class DataManager:
 
 # ===== ML ENGINE REAL =====
 class MLEngine:
-    def __init__(self):
+    def __init__(self, model_type="RandomForest"):
+        self.model_type = model_type
         self.model_trained = False
         self.predictions = {"azul": 44.5, "vermelho": 44.5, "empate": 11.0}
         
-        # Modelo de ML real
-        self.ml_model = RandomForestClassifier(
-            n_estimators=100,
-            random_state=42,
-            max_depth=10,
-            min_samples_split=5
-        )
+        # Inicializar modelos
         self.label_encoder = LabelEncoder()
-        self.ml_trained = False
-        self.window_size = 5  # Usar últimas 5 jogadas para prever a próxima
-        
-        # Inicializar encoder
         self.label_encoder.fit(["azul", "vermelho", "empate"])
+        self.window_size = 5
         
-    def train_model(self, beads_data, statistics):
+        self._init_model()
+        self.ml_trained = False
+    
+    def _init_model(self):
+        if self.model_type == "RandomForest":
+            self.ml_model = RandomForestClassifier(
+                n_estimators=100,
+                random_state=42,
+                max_depth=10,
+                min_samples_split=5
+            )
+        elif self.model_type == "SVM":
+            self.ml_model = SVC(
+                probability=True,
+                random_state=42,
+                kernel='rbf'
+            )
+        elif self.model_type == "LSTM":
+            class SimpleLSTM(nn.Module):
+                def __init__(self, input_size=3, hidden_size=32, num_layers=1, output_size=3):
+                    super().__init__()
+                    self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True)
+                    self.fc = nn.Linear(hidden_size, output_size)
+                
+                def forward(self, x):
+                    out, _ = self.lstm(x)
+                    out = self.fc(out[:, -1, :])
+                    return out
+            
+            self.ml_model = SimpleLSTM()
+            self.optimizer = optim.Adam(self.ml_model.parameters(), lr=0.001)
+            self.criterion = nn.CrossEntropyLoss()
+        else:
+            raise ValueError("Modelo inválido")
+        
+    def train_model(self, beads_data, statistics, model_type=None):
+        if model_type:
+            self.model_type = model_type
+            self._init_model()
+        
         total_beads = statistics.get("total_beads", 0)
         
         # Tentar ML real se tivermos dados suficientes
@@ -103,7 +139,7 @@ class MLEngine:
             ml_result = self._train_heuristic_model(beads_data, statistics)
             ml_result["model_type"] = "Heurístico"
         else:
-            ml_result["model_type"] = "Random Forest ML"
+            ml_result["model_type"] = self.model_type
         
         self.model_trained = True
         self.predictions = ml_result["predictions"]
@@ -112,7 +148,6 @@ class MLEngine:
     
     def _train_ml_model(self, beads_data, statistics):
         try:
-            # Preparar dados para ML
             all_beads = self._get_all_beads(beads_data)
             
             if len(all_beads) < self.window_size + 5:
@@ -124,43 +159,108 @@ class MLEngine:
             if len(X) < 10:
                 return {"success": False, "error": "Poucos exemplos para treino"}
             
-            # Dividir dados
-            X_train, X_test, y_train, y_test = train_test_split(
-                X, y, test_size=0.3, random_state=42, stratify=y
-            )
-            
-            # Treinar modelo
-            self.ml_model.fit(X_train, y_train)
-            
-            # Calcular precisão
-            accuracy = self.ml_model.score(X_test, y_test) * 100
-            
-            # Fazer previsão para a próxima jogada
-            last_sequence = self._get_last_sequence(all_beads)
-            if last_sequence is not None:
-                next_pred_proba = self.ml_model.predict_proba([last_sequence])[0]
-                classes = self.ml_model.classes_
+            if self.model_type in ["RandomForest", "SVM"]:
+                # Dividir dados
+                X_train, X_test, y_train, y_test = train_test_split(
+                    X, y, test_size=0.3, random_state=42, stratify=y
+                )
                 
-                ml_predictions = {}
-                for i, class_name in enumerate(classes):
-                    color = self.label_encoder.inverse_transform([class_name])[0]
-                    ml_predictions[color] = next_pred_proba[i] * 100
+                # Treinar modelo
+                self.ml_model.fit(X_train, y_train)
                 
-                # Garantir que todas as cores estão presentes
-                for color in ["azul", "vermelho", "empate"]:
-                    if color not in ml_predictions:
-                        ml_predictions[color] = 0
-            else:
-                ml_predictions = {"azul": 44.5, "vermelho": 44.5, "empate": 11.0}
+                # Calcular precisão
+                accuracy = self.ml_model.score(X_test, y_test) * 100
+                
+                # Fazer previsão para a próxima jogada
+                last_sequence = self._get_last_sequence(all_beads)
+                if last_sequence is not None:
+                    next_pred_proba = self.ml_model.predict_proba([last_sequence])[0]
+                    classes = self.ml_model.classes_
+                    
+                    ml_predictions = {}
+                    for i, class_name in enumerate(classes):
+                        color = self.label_encoder.inverse_transform([class_name])[0]
+                        ml_predictions[color] = next_pred_proba[i] * 100
+                    
+                    # Garantir que todas as cores estão presentes
+                    for color in ["azul", "vermelho", "empate"]:
+                        if color not in ml_predictions:
+                            ml_predictions[color] = 0
+                else:
+                    ml_predictions = {"azul": 44.5, "vermelho": 44.5, "empate": 11.0}
+            
+            elif self.model_type == "LSTM":
+                # Para LSTM, usar PyTorch
+                bead_numbers = self.label_encoder.transform(all_beads)
+                sequences = []
+                labels = []
+                for i in range(self.window_size, len(bead_numbers) - 1):
+                    seq = bead_numbers[i - self.window_size:i]
+                    one_hot_seq = np.eye(3)[seq]  # One-hot encode
+                    sequences.append(one_hot_seq)
+                    labels.append(bead_numbers[i])
+                
+                X = np.array(sequences)
+                y = np.array(labels)
+                
+                # Dividir dados
+                split = int(len(X) * 0.7)
+                X_train, X_test = X[:split], X[split:]
+                y_train, y_test = y[:split], y[split:]
+                
+                # DataLoader
+                class BeadDataset(Dataset):
+                    def __init__(self, X, y):
+                        self.X = torch.tensor(X, dtype=torch.float32)
+                        self.y = torch.tensor(y, dtype=torch.long)
+                    
+                    def __len__(self):
+                        return len(self.y)
+                    
+                    def __getitem__(self, idx):
+                        return self.X[idx], self.y[idx]
+                
+                train_dataset = BeadDataset(X_train, y_train)
+                train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
+                
+                # Treino
+                epochs = 50
+                for epoch in range(epochs):
+                    self.ml_model.train()
+                    for batch_X, batch_y in train_loader:
+                        self.optimizer.zero_grad()
+                        outputs = self.ml_model(batch_X)
+                        loss = self.criterion(outputs, batch_y)
+                        loss.backward()
+                        self.optimizer.step()
+                
+                # Precisão
+                self.ml_model.eval()
+                with torch.no_grad():
+                    test_X = torch.tensor(X_test, dtype=torch.float32)
+                    outputs = self.ml_model(test_X)
+                    predicted = torch.argmax(outputs, dim=1)
+                    accuracy = (predicted.numpy() == y_test).mean() * 100
+                
+                # Previsão próxima
+                last_sequence = self._get_last_sequence(all_beads)
+                if last_sequence is not None:
+                    seq = np.eye(3)[last_sequence[:self.window_size]]  # One-hot
+                    seq_tensor = torch.tensor(seq, dtype=torch.float32).unsqueeze(0)
+                    with torch.no_grad():
+                        output = self.ml_model(seq_tensor)
+                        probs = torch.softmax(output, dim=1)[0].numpy() * 100
+                    ml_predictions = dict(zip(["azul", "vermelho", "empate"], probs))
+                else:
+                    ml_predictions = {"azul": 44.5, "vermelho": 44.5, "empate": 11.0}
             
             self.ml_trained = True
-            self.ml_accuracy = accuracy
             
             return {
                 "success": True,
                 "accuracy": accuracy,
                 "predictions": ml_predictions,
-                "training_examples": len(X_train),
+                "training_examples": len(X_train) if 'X_train' in locals() else split,
                 "features_used": f"Últimas {self.window_size} jogadas"
             }
             
@@ -241,7 +341,7 @@ class MLEngine:
                 extended_features.append(np.sum(features == color_idx))
             
             # Label: próxima jogada
-            label = bead_numbers[i + 1]
+            label = bead_numbers[i]
             
             X.append(extended_features)
             y.append(label)
@@ -285,20 +385,21 @@ class MLEngine:
 class BBDeepMobile:
     def __init__(self):
         self.data_manager = DataManager()
-        self.ml_engine = MLEngine()
+        self.ml_engine = None  # Inicializado no load
         
         # Inicializar estado apenas uma vez
         if 'app_initialized' not in st.session_state:
             self.load_initial_state()
             st.session_state.app_initialized = True
+        self.ml_engine = MLEngine(self.state["settings"].get("ml_model_type", "RandomForest"))
 
     def load_initial_state(self):
         default_state = {
             "beads": [],
             "current_column": [],
             "last_color": None,
-            "previous_prediction": None,  # Nova: previsão anterior
-            "gale_count": 0,  # Nova: contador de Gale
+            "previous_prediction": None,
+            "gale_count": 0,
             "statistics": {
                 "azul_count": 0, "vermelho_count": 0, "empate_count": 0,
                 "total_beads": 0, "seq_vermelho": 0, "seq_empate": 0
@@ -308,10 +409,13 @@ class BBDeepMobile:
                 "predictions": {"azul": 44.5, "vermelho": 44.5, "empate": 11.0},
                 "last_trained": None, "training_count": 0,
                 "model_type": "Nenhum", "training_examples": 0,
-                "active_model": "Nenhum"
+                "active_model": "Nenhum",
+                "hits": 0,  # Novo para win rate
+                "total_predictions": 0  # Novo para win rate
             },
             "settings": {
-                "auto_train": True, "train_interval": 1  # Default para 1
+                "auto_train": True, "train_interval": 1,
+                "ml_model_type": "RandomForest"  # Novo: default RF
             }
         }
         
@@ -337,6 +441,17 @@ class BBDeepMobile:
         for key in ["beads", "current_column", "previous_prediction", "gale_count"]:
             if key not in loaded_state:
                 loaded_state[key] = [] if key in ["beads", "current_column"] else None if key == "previous_prediction" else 0
+        
+        if "ml_model" not in loaded_state:
+            loaded_state["ml_model"] = {}
+        for key in ["hits", "total_predictions"]:
+            if key not in loaded_state["ml_model"]:
+                loaded_state["ml_model"][key] = 0
+        
+        if "settings" not in loaded_state:
+            loaded_state["settings"] = {}
+        if "ml_model_type" not in loaded_state["settings"]:
+            loaded_state["settings"]["ml_model_type"] = "RandomForest"
         
         return loaded_state
 
@@ -382,6 +497,12 @@ class BBDeepMobile:
             self.state["statistics"]["empate_count"] += 1
             self.state["statistics"]["seq_empate"] += 1
             self.state["statistics"]["seq_vermelho"] = 0
+        
+        # Atualizar win rate se havia previsão
+        if current_prediction:
+            self.state["ml_model"]["total_predictions"] += 1
+            if current_prediction == color:
+                self.state["ml_model"]["hits"] += 1
         
         # LÓGICA DO GALE - VERIFICAR APÓS REGISTRO
         if current_prediction and current_prediction != color:
@@ -464,9 +585,12 @@ class BBDeepMobile:
             "last_trained": None, "training_count": 0,
             "model_type": "Nenhum", "training_examples": 0,
             "active_model": "Nenhum",
-            "features_info": "Nenhum"
+            "features_info": "Nenhum",
+            "hits": 0,
+            "total_predictions": 0
         })
         self.save_state()
+        self.ml_engine = MLEngine(self.state["settings"]["ml_model_type"])
 
 def main():
     st.set_page_config(
@@ -736,16 +860,21 @@ def main():
     with st.popover("⚙️ Configurações", use_container_width=True):
         auto_train = st.checkbox("Auto-treino", value=app.state["settings"]["auto_train"], key="auto_train")
         train_interval = st.slider("Intervalo:", 1, 20, app.state["settings"]["train_interval"], key="train_interval")
+        ml_model_type = st.selectbox("Tipo de Modelo ML", ["RandomForest", "SVM", "LSTM"], index=["RandomForest", "SVM", "LSTM"].index(app.state["settings"]["ml_model_type"]), key="ml_model_type")
         
         if st.button("💾 Aplicar", key="save_config"):
             app.state["settings"]["auto_train"] = auto_train
             app.state["settings"]["train_interval"] = train_interval
+            app.state["settings"]["ml_model_type"] = ml_model_type
+            app.ml_engine = MLEngine(ml_model_type)  # Reinicializa engine com novo tipo
             app.save_state()
             st.rerun()
     
     with st.popover("📊 Info ML", use_container_width=True):
         st.write(f"**Modelo:** {app.state['ml_model']['model_type']}")
         st.write(f"**Precisão:** {app.state['ml_model']['accuracy']:.1f}%")
+        win_rate = (app.state['ml_model']['hits'] / app.state['ml_model']['total_predictions'] * 100) if app.state['ml_model']['total_predictions'] > 0 else 0
+        st.write(f"**Win Rate Real:** {win_rate:.1f}% ({app.state['ml_model']['hits']}/{app.state['ml_model']['total_predictions']})")
         st.write(f"**Exemplos treino:** {app.state['ml_model']['training_examples']}")
         st.write(f"**Total treinos:** {app.state['ml_model']['training_count']}")
         st.write(f"**Gale atual:** {app.state['gale_count']}")
