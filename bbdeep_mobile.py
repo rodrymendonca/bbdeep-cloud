@@ -690,6 +690,15 @@ def main():
             html += '</div>'
         
         html += '</div></div>'
+        html += """
+        <script>
+        // Auto-scroll para a direita após render
+        var container = parent.document.querySelector('.bead-road-container');
+        if (container) {
+            container.scrollLeft = container.scrollWidth;
+        }
+        </script>
+        """
         st.markdown(html, unsafe_allow_html=True)
     else:
         st.caption("Sem beads registados ainda.")
