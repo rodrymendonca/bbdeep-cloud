@@ -193,7 +193,7 @@ class MLEngine:
                 empate_prob += seq_vermelho * 3
             elif seq_empate >= 2:
                 azul_prob += seq_empate * 6
-                vermelho_prob += seq_empate * 6
+                vermelho_prob += seq_empate* 6
             
             predictions = {
                 "azul": max(5, min(90, azul_prob)),
@@ -476,7 +476,7 @@ def main():
         initial_sidebar_state="collapsed"
     )
     
-    # CSS Ultra Compacto para Mobile
+    # CSS Ultra Compacto para Mobile (adicionado estilos para o bead road)
     st.markdown("""
     <style>
     .main-container {
@@ -543,6 +543,37 @@ def main():
         border-radius: 10px;
         font-size: 12px;
         margin-left: 5px;
+    }
+    /* Estilos para o Bead Road */
+    .bead-road-container {
+        overflow-x: auto;
+        white-space: nowrap;
+        margin: 10px 0;
+        padding: 5px;
+        background-color: #f0f0f0;
+        border-radius: 8px;
+        max-height: 200px;  /* Limita altura pra não crescer demais */
+    }
+    .bead-column {
+        display: inline-flex;
+        flex-direction: column-reverse;  /* Beads crescem de cima pra baixo */
+        margin-right: 5px;
+        width: 30px;
+        height: 180px;  /* Altura fixa pra 6 beads */
+        justify-content: flex-start;
+        align-items: center;
+    }
+    .bead {
+        font-size: 24px;
+        line-height: 30px;
+        width: 30px;
+        height: 30px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        border: 1px solid #ddd;
+        border-radius: 50%;
+        margin-bottom: 2px;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -632,6 +663,37 @@ def main():
         st.metric("🔴 Seq", app.state['statistics']['seq_vermelho'], delta=None)
     with col6:
         st.metric("🟡 Seq", app.state['statistics']['seq_empate'], delta=None)
+    
+    # VISUALIZAÇÃO DO BEAD ROAD
+    st.markdown("**Bead Road:**")
+    beads = app.state["beads"]
+    current_column = app.state["current_column"]
+    
+    if beads or current_column:
+        html = '<div class="bead-road-container"><div style="display: flex;">'
+        
+        # Adicionar colunas completas
+        for column in beads:
+            html += '<div class="bead-column">'
+            for bead in column:
+                color = bead["color"]
+                emoji = "🔵" if color == "azul" else "🔴" if color == "vermelho" else "🟡"
+                html += f'<div class="bead">{emoji}</div>'
+            html += '</div>'
+        
+        # Adicionar coluna atual (incompleta)
+        if current_column:
+            html += '<div class="bead-column">'
+            for bead in current_column:
+                color = bead["color"]
+                emoji = "🔵" if color == "azul" else "🔴" if color == "vermelho" else "🟡"
+                html += f'<div class="bead">{emoji}</div>'
+            html += '</div>'
+        
+        html += '</div></div>'
+        st.markdown(html, unsafe_allow_html=True)
+    else:
+        st.caption("Sem beads registados ainda.")
     
     # INDICADOR GALE
     if gale_count > 0:
