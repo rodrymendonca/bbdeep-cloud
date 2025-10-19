@@ -269,25 +269,34 @@ def main():
         initial_sidebar_state="collapsed"
     )
     
-    # CSS Otimizado para Mobile
+    # CSS Ultra Compacto para Mobile
     st.markdown("""
     <style>
-    /* Layout geral para mobile */
+    /* Reset e configurações base */
     .main-container {
         width: 100%;
-        max-width: 480px;
-        margin: 0 auto;
-        padding: 10px;
+        max-width: 100%;
+        margin: 0;
+        padding: 8px;
     }
     
-    /* Previsão em destaque */
-    .prediction-mobile {
-        border-radius: 15px;
-        padding: 25px 15px;
+    /* Compactar tudo */
+    .block-container {
+        padding-top: 1rem;
+        padding-bottom: 1rem;
+    }
+    
+    /* Previsão compacta */
+    .prediction-compact {
+        border-radius: 12px;
+        padding: 15px 10px;
         text-align: center;
-        margin: 15px 0;
+        margin: 8px 0;
         font-weight: bold;
-        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        min-height: 60px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
     }
     .prediction-azul { 
         background: linear-gradient(135deg, #2196f3, #1976d2);
@@ -302,82 +311,85 @@ def main():
         color: black;
     }
     
-    /* Botões grandes para mobile */
-    .mobile-btn {
-        height: 60px !important;
-        font-size: 18px !important;
-        font-weight: bold !important;
-        border-radius: 12px !important;
-        margin: 8px 0 !important;
-    }
-    .btn-azul {
-        background-color: #2196f3 !important;
-        color: white !important;
-        border: none !important;
-    }
-    .btn-vermelho {
-        background-color: #f44336 !important;
-        color: white !important;
-        border: none !important;
-    }
-    .btn-empate {
-        background-color: #ffc107 !important;
-        color: black !important;
-        border: none !important;
+    /* Botões compactos */
+    .stButton button {
+        height: 45px !important;
+        font-size: 16px !important;
+        margin: 4px 0 !important;
+        border-radius: 8px !important;
     }
     
-    /* Cartões de informação */
-    .info-card {
-        background-color: white;
-        border-radius: 12px;
-        padding: 15px;
-        margin: 10px 0;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        border-left: 4px solid #2196f3;
-    }
-    
-    /* Estatísticas em grid */
-    .stats-grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 10px;
-        margin: 15px 0;
+    /* Estatísticas em linha única */
+    .stats-row {
+        display: flex;
+        justify-content: space-between;
+        margin: 8px 0;
+        flex-wrap: wrap;
     }
     .stat-item {
+        flex: 1;
+        min-width: 30%;
         text-align: center;
-        padding: 12px;
-        border-radius: 10px;
+        padding: 8px 4px;
+        margin: 2px;
         background-color: #f8f9fa;
+        border-radius: 6px;
+        font-size: 12px;
     }
     
-    /* Ajustes gerais do Streamlit */
-    .stButton button {
-        width: 100% !important;
+    /* Barras de progresso compactas */
+    .compact-progress {
+        height: 20px;
+        margin: 5px 0;
     }
     
-    /* Títulos menores para mobile */
+    /* Reduzir espaçamento de todos os elementos */
+    .stMarkdown {
+        margin-bottom: 0.5rem !important;
+    }
+    
     h1 {
-        font-size: 24px !important;
-        text-align: center;
-    }
-    h2 {
         font-size: 20px !important;
-    }
-    h3 {
-        font-size: 18px !important;
+        margin-bottom: 0.5rem !important;
     }
     
-    /* Esconder menu e footer do Streamlit */
+    h2 {
+        font-size: 16px !important;
+        margin-bottom: 0.5rem !important;
+    }
+    
+    h3 {
+        font-size: 14px !important;
+        margin-bottom: 0.25rem !important;
+    }
+    
+    /* Ajustar inputs */
+    .stSelectbox, .stNumberInput, .stSlider {
+        margin-bottom: 0.5rem !important;
+    }
+    
+    /* Esconder elementos do Streamlit */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
+    .stDeployButton {display:none;}
+    
+    /* Compactar expanders */
+    .streamlit-expanderHeader {
+        font-size: 14px !important;
+        padding: 0.5rem 0.75rem !important;
+    }
+    
+    /* Reduzir padding geral */
+    div[data-testid="stVerticalBlock"] > div {
+        padding: 0.25rem 0;
+    }
     </style>
     """, unsafe_allow_html=True)
     
-    # Container principal
+    # Container principal ultra compacto
     st.markdown('<div class="main-container">', unsafe_allow_html=True)
     
     st.title("🤖 BB DEEP")
-    st.markdown("**Previsão por Machine Learning**")
     
     # Inicializar app
     if 'app' not in st.session_state:
@@ -385,10 +397,7 @@ def main():
     
     app = st.session_state.app
     
-    # SEÇÃO 1: PREVISÃO EM DESTAQUE
-    st.markdown("---")
-    st.subheader("🎯 PREVISÃO ATUAL")
-    
+    # SEÇÃO 1: PREVISÃO (MUITO COMPACTA)
     next_color, confidence = app.get_next_prediction()
     
     if next_color:
@@ -397,138 +406,129 @@ def main():
         color_emoji = {"azul": "🔵", "vermelho": "🔴", "empate": "🟡"}
         
         st.markdown(f"""
-        <div class="prediction-mobile {color_class}">
-            <div style="font-size: 32px; margin-bottom: 10px;">{color_emoji[next_color]}</div>
-            <div style="font-size: 22px; margin-bottom: 5px;">{color_name[next_color]}</div>
-            <div style="font-size: 16px; opacity: 0.9;">{confidence:.1f}% confiança</div>
+        <div class="prediction-compact {color_class}">
+            <div style="font-size: 18px; margin-bottom: 2px;">PRÓXIMA: {color_emoji[next_color]} {color_name[next_color]}</div>
+            <div style="font-size: 14px;">{confidence:.1f}% confiança</div>
         </div>
         """, unsafe_allow_html=True)
         
         if app.state["ml_model"]["trained"]:
-            st.caption(f"Modelo: {app.state['ml_model']['model_type']} | Precisão: {app.state['ml_model']['accuracy']:.1f}%")
+            st.caption(f"🎯 {app.state['ml_model']['model_type']} | {app.state['ml_model']['accuracy']:.1f}% precisão")
     else:
-        st.info("📊 Registe alguns beads e treine o modelo para obter previsões")
+        st.info("📊 Registe beads e treine o modelo")
     
-    # SEÇÃO 2: REGISTO DE BEADS
-    st.markdown("---")
-    st.subheader("📝 REGISTAR BEAD")
+    # SEÇÃO 2: BOTÕES DE REGISTO (COMPACTOS)
+    st.markdown("**Registar:**")
+    btn_col1, btn_col2, btn_col3 = st.columns(3)
     
-    # Botões grandes para registo
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("🔵 AZUL", key="btn_azul", use_container_width=True):
+    with btn_col1:
+        if st.button("🔵 AZUL", use_container_width=True, key="btn_azul"):
             app.register_bead('azul')
-            st.success("Bead AZUL registado!")
+            st.rerun()
     
-    with col2:
-        if st.button("🔴 VERMELHO", key="btn_vermelho", use_container_width=True):
+    with btn_col2:
+        if st.button("🔴 VERM.", use_container_width=True, key="btn_vermelho"):
             app.register_bead('vermelho')
-            st.success("Bead VERMELHO registado!")
+            st.rerun()
     
-    # Empate com seleção
-    st.markdown("**Empate:**")
-    tie_col1, tie_col2 = st.columns([2, 1])
-    with tie_col1:
-        tie_sum = st.selectbox("Soma:", [2,3,4,5,6,7,8,9,10,11,12], key="tie_select", label_visibility="collapsed")
-    with tie_col2:
-        if st.button("🟡 REGISTAR", key="btn_empate", use_container_width=True):
-            app.register_bead('empate', tie_sum)
-            st.success(f"Bead EMPATE ({tie_sum}) registado!")
+    with btn_col3:
+        if st.button("🟡 EMP.", use_container_width=True, key="btn_empate"):
+            # Para empate, mostrar seleção inline
+            with st.popover("Soma:"):
+                tie_sum = st.selectbox("Escolha soma:", [2,3,4,5,6,7,8,9,10,11,12], key="tie_select")
+                if st.button("✅ Confirmar", key="confirm_empate"):
+                    app.register_bead('empate', tie_sum)
+                    st.rerun()
     
-    # SEÇÃO 3: ESTATÍSTICAS RÁPIDAS
+    # SEÇÃO 3: ESTATÍSTICAS ULTRA COMPACTAS
     st.markdown("---")
-    st.subheader("📊 ESTATÍSTICAS")
     
-    # Grid de estatísticas
-    st.markdown('<div class="stats-grid">', unsafe_allow_html=True)
-    
-    col1, col2 = st.columns(2)
+    # Primeira linha de stats
+    st.markdown('<div class="stats-row">', unsafe_allow_html=True)
+    col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric("🔵 Azul", app.state['statistics']['azul_count'])
-        st.metric("🎯 Total", app.state['statistics']['total_beads'])
-        st.metric("🔴 Seq V", app.state['statistics']['seq_vermelho'])
-    
+        st.metric("🔵 Azul", app.state['statistics']['azul_count'], delta=None)
     with col2:
-        st.metric("🔴 Vermelho", app.state['statistics']['vermelho_count'])
-        st.metric("🟡 Empate", app.state['statistics']['empate_count'])
-        st.metric("🟡 Seq E", app.state['statistics']['seq_empate'])
+        st.metric("🔴 Verm.", app.state['statistics']['vermelho_count'], delta=None)
+    with col3:
+        st.metric("🟡 Emp.", app.state['statistics']['empate_count'], delta=None)
     
-    st.markdown('</div>', unsafe_allow_html=True)
+    # Segunda linha de stats
+    col4, col5, col6 = st.columns(3)
+    with col4:
+        st.metric("📊 Total", app.state['statistics']['total_beads'], delta=None)
+    with col5:
+        st.metric("🔴 Seq", app.state['statistics']['seq_vermelho'], delta=None)
+    with col6:
+        st.metric("🟡 Seq", app.state['statistics']['seq_empate'], delta=None)
     
-    # SEÇÃO 4: INFORMAÇÃO DO MODELO
-    st.markdown("---")
-    st.subheader("🤖 MODELO ML")
-    
+    # SEÇÃO 4: PROBABILIDADES COMPACTAS
     if app.state["ml_model"]["trained"]:
-        # Probabilidades detalhadas
+        st.markdown("---")
+        st.markdown("**Probabilidades:**")
+        
         pred = app.state["ml_model"]["predictions"]
         
-        st.markdown("**Probabilidades:**")
-        prob_col1, prob_col2, prob_col3 = st.columns(3)
-        with prob_col1:
+        # Barras de progresso horizontais compactas
+        col_p1, col_p2, col_p3 = st.columns(3)
+        with col_p1:
+            st.markdown(f"🔵 {pred['azul']:.1f}%")
             st.progress(pred['azul']/100)
-            st.caption(f"🔵 {pred['azul']:.1f}%")
-        with prob_col2:
+        with col_p2:
+            st.markdown(f"🔴 {pred['vermelho']:.1f}%")
             st.progress(pred['vermelho']/100)
-            st.caption(f"🔴 {pred['vermelho']:.1f}%")
-        with prob_col3:
+        with col_p3:
+            st.markdown(f"🟡 {pred['empate']:.1f}%")
             st.progress(pred['empate']/100)
-            st.caption(f"🟡 {pred['empate']:.1f}%")
-        
-        st.caption(f"Treinado: {app.state['ml_model']['last_trained'][:19].replace('T', ' ')}")
-        st.caption(f"Exemplos: {app.state['ml_model']['training_examples']} beads")
     
-    else:
-        st.warning("⚠️ Modelo não treinado")
-    
-    # SEÇÃO 5: GESTÃO
+    # SEÇÃO 5: CONTROLES COMPACTOS
     st.markdown("---")
-    st.subheader("⚙️ GESTÃO")
     
-    # Botões de gestão
-    col_mgmt1, col_mgmt2 = st.columns(2)
-    with col_mgmt1:
-        if st.button("🎯 TREINAR", key="train_ml", use_container_width=True):
+    # Botões de ação em linha
+    action_col1, action_col2 = st.columns(2)
+    with action_col1:
+        if st.button("🎯 TREINAR", use_container_width=True, key="train_ml"):
             if app.train_model():
-                st.success("✅ Modelo treinado!")
-            else:
-                st.error("❌ Erro no treino")
+                st.rerun()
     
-    with col_mgmt2:
-        if st.button("🔄 RESET", key="reset_model", use_container_width=True):
+    with action_col2:
+        if st.button("🔄 RESETAR", use_container_width=True, key="reset_model"):
             app.reset_model()
-            st.success("✅ Modelo resetado!")
+            st.rerun()
     
-    # Configurações
-    with st.expander("🔧 CONFIGURAÇÕES"):
+    # Configurações em popover para economizar espaço
+    with st.popover("⚙️ Configurações", use_container_width=True):
         auto_train = st.checkbox("Auto-treino", value=app.state["settings"]["auto_train"], key="auto_train")
-        train_interval = st.slider("Intervalo auto-treino:", 
-                                 min_value=1, max_value=20, 
-                                 value=app.state["settings"]["train_interval"],
-                                 key="train_interval")
+        train_interval = st.slider("Intervalo:", 1, 20, app.state["settings"]["train_interval"], key="train_interval")
         
-        if st.button("💾 GUARDAR", key="save_config", use_container_width=True):
+        if st.button("💾 Aplicar", key="save_config"):
             app.state["settings"]["auto_train"] = auto_train
             app.state["settings"]["train_interval"] = train_interval
             app.save_state()
-            st.success("✅ Configurações guardadas!")
+            st.rerun()
     
-    # SEÇÃO 6: INFORMAÇÃO ADICIONAL
-    with st.expander("📋 INFORMAÇÃO"):
-        st.write(f"**Colunas completas:** {len(app.state['beads'])}")
-        st.write(f"**Beads na coluna atual:** {len(app.state['current_column'])}")
-        if app.state['current_column']:
-            last_beads = " | ".join([bead['color'][0].upper() + (str(bead.get('tie_sum', '')) if bead['color'] == 'empate' else '') 
-                                  for bead in app.state['current_column'][-3:]])
-            st.write(f"**Últimos beads:** {last_beads}")
+    # Informação rápida em popover
+    with st.popover("📊 Info Rápida", use_container_width=True):
+        st.write(f"**Colunas:** {len(app.state['beads'])}")
+        st.write(f"**Coluna atual:** {len(app.state['current_column'])}/6")
+        st.write(f"**Treinos:** {app.state['ml_model']['training_count']}")
         
-        st.write(f"**Treinos realizados:** {app.state['ml_model']['training_count']}")
+        if app.state['current_column']:
+            st.write("**Últimos:**")
+            last_beads = ""
+            for bead in app.state['current_column'][-3:]:
+                symbol = bead['color'][0].upper()
+                if bead['color'] == 'empate':
+                    symbol += str(bead.get('tie_sum', ''))
+                last_beads += symbol + " "
+            st.write(last_beads)
+    
+    # Estado atual muito compacto
+    if app.state['current_column']:
+        current_progress = len(app.state['current_column'])
+        st.caption(f"📝 Coluna atual: {current_progress}/6 beads")
     
     st.markdown('</div>', unsafe_allow_html=True)
-    
-    # Rodapé
-    st.markdown("---")
-    st.caption("🤖 BB DEEP Mobile v1.0 | Machine Learning para Previsões")
 
 if __name__ == "__main__":
     main()
