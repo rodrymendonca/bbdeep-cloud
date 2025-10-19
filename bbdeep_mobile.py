@@ -193,7 +193,7 @@ class MLEngine:
                 empate_prob += seq_vermelho * 3
             elif seq_empate >= 2:
                 azul_prob += seq_empate * 6
-                vermelho_prob += seq_empate* 6
+                vermelho_prob += seq_empate * 6
             
             predictions = {
                 "azul": max(5, min(90, azul_prob)),
@@ -476,7 +476,7 @@ def main():
         initial_sidebar_state="collapsed"
     )
     
-    # CSS Ultra Compacto para Mobile (adicionado estilos para o bead road)
+    # CSS Ultra Compacto para Mobile (ajustado para bead road crescer pra baixo)
     st.markdown("""
     <style>
     .main-container {
@@ -544,22 +544,21 @@ def main():
         font-size: 12px;
         margin-left: 5px;
     }
-    /* Estilos para o Bead Road */
+    /* Estilos para o Bead Road ajustados */
     .bead-road-container {
         overflow-x: auto;
         white-space: nowrap;
         margin: 10px 0;
-        padding: 5px;
+        padding: 10px;
         background-color: #f0f0f0;
         border-radius: 8px;
-        max-height: 200px;  /* Limita altura pra não crescer demais */
+        max-height: 220px;  /* Ajustado pra caber 6 beads + padding */
     }
     .bead-column {
         display: inline-flex;
-        flex-direction: column-reverse;  /* Beads crescem de cima pra baixo */
-        margin-right: 5px;
-        width: 30px;
-        height: 180px;  /* Altura fixa pra 6 beads */
+        flex-direction: column;  /* Mudado pra column normal, beads crescem pra baixo */
+        margin-right: 8px;
+        width: 32px;
         justify-content: flex-start;
         align-items: center;
     }
@@ -573,7 +572,7 @@ def main():
         align-items: center;
         border: 1px solid #ddd;
         border-radius: 50%;
-        margin-bottom: 2px;
+        margin-bottom: 4px;  /* Mais espaço entre beads */
     }
     </style>
     """, unsafe_allow_html=True)
