@@ -5,13 +5,22 @@ import os
 import numpy as np
 from datetime import datetime
 import warnings
+import logging
 warnings.filterwarnings('ignore')
 
-# ===== DATA MANAGER =====
+# ===== DATA MANAGER COMPLETO =====
 class DataManager:
-    def __init__(self):
-        self.data_dir = "data"
+    def __init__(self, data_dir="data"):
+        self.data_dir = data_dir
+        self.setup_logging()
         self.ensure_data_dir()
+        
+    def setup_logging(self):
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s - %(levelname)s - %(message)s'
+        )
+        self.logger = logging.getLogger(__name__)
     
     def ensure_data_dir(self):
         if not os.path.exists(self.data_dir):
@@ -23,21 +32,61 @@ class DataManager:
     def save_data(self, data, filename):
         try:
             filepath = self.get_file_path(filename)
+            
+            # Backup do estado anterior
+            if os.path.exists(filepath):
+                backup_path = filepath + ".backup"
+                with open(filepath, 'r', encoding='utf-8') as original:
+                    backup_data = json.load(original)
+                with open(backup_path, 'w', encoding='utf-8') as backup:
+                    json.dump(backup_data, backup, indent=2, ensure_ascii=False)
+            
+            # Guardar novo estado
             with open(filepath, 'w', encoding='utf-8') as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)
+            
+            self.logger.info(f"Dados guardados: {filename}")
             return True
         except Exception as e:
+            self.logger.error(f"Erro ao guardar {filename}: {e}")
+            # Tentar usar backup se existir
+            try:
+                backup_path = self.get_file_path(filename) + ".backup"
+                if os.path.exists(backup_path):
+                    with open(backup_path, 'r', encoding='utf-8') as backup:
+                        backup_data = json.load(backup)
+                    with open(self.get_file_path(filename), 'w', encoding='utf-8') as f:
+                        json.dump(backup_data, f, indent=2, ensure_ascii=False)
+                    self.logger.info("Restaurado a partir do backup")
+            except:
+                pass
             return False
     
-    def load_data(self, filename):
+    def load_data(self, filename, default=None):
         try:
             filepath = self.get_file_path(filename)
             if os.path.exists(filepath):
                 with open(filepath, 'r', encoding='utf-8') as f:
-                    return json.load(f)
-            return None
+                    data = json.load(f)
+                
+                self.logger.info(f"Dados carregados: {filename}")
+                return data
+            else:
+                self.logger.info(f"Ficheiro não encontrado: {filename}")
+                return default if default is not None else {}
         except Exception as e:
-            return None
+            self.logger.error(f"Erro ao carregar {filename}: {e}")
+            # Tentar carregar backup
+            try:
+                backup_path = self.get_file_path(filename) + ".backup"
+                if os.path.exists(backup_path):
+                    with open(backup_path, 'r', encoding='utf-8') as backup:
+                        data = json.load(backup)
+                    self.logger.info("Carregado a partir do backup")
+                    return data
+            except:
+                pass
+            return default if default is not None else {}
 
 # ===== ML ENGINE =====
 class MLEngine:
