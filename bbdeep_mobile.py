@@ -101,13 +101,10 @@ class MLEngine:
         return self.model_trained
 
 # ===== MAIN APP =====
-class BBDeepMobile:
+class BBDeepCore:
     def __init__(self):
         self.data_manager = DataManager()
         self.ml_engine = MLEngine()
-        
-        self.ODDS = {'azul': 2.0, 'vermelho': 2.0, 'empate': 5.0}
-        self.TIE_PAYOUTS = {2: 88, 12: 88, 3: 25, 11: 25, 4: 10, 10: 10, 5: 6, 9: 6, 6: 4, 7: 4, 8: 4}
         
         # Inicializar estado apenas uma vez
         if 'app_initialized' not in st.session_state:
@@ -119,14 +116,9 @@ class BBDeepMobile:
             "beads": [],
             "current_column": [],
             "last_color": None,
-            "bank": 100.0,
-            "bets": [],
-            "bet_history": [],
             "statistics": {
                 "azul_count": 0, "vermelho_count": 0, "empate_count": 0,
-                "total_beads": 0, "bets_count": 0, "bets_won": 0, "bets_lost": 0,
-                "max_win": 0, "max_win_percent": 0, "seq_vermelho": 0, "seq_empate": 0,
-                "profit": 0, "total_wagered": 0, "total_won": 0
+                "total_beads": 0, "seq_vermelho": 0, "seq_empate": 0
             },
             "ml_model": {
                 "trained": False, "accuracy": 0,
@@ -149,9 +141,7 @@ class BBDeepMobile:
     def ensure_state_compatibility(self, loaded_state):
         default_stats = {
             "azul_count": 0, "vermelho_count": 0, "empate_count": 0,
-            "total_beads": 0, "bets_count": 0, "bets_won": 0, "bets_lost": 0,
-            "max_win": 0, "max_win_percent": 0, "seq_vermelho": 0, "seq_empate": 0,
-            "profit": 0, "total_wagered": 0, "total_won": 0
+            "total_beads": 0, "seq_vermelho": 0, "seq_empate": 0
         }
         
         if "statistics" not in loaded_state:
@@ -161,9 +151,14 @@ class BBDeepMobile:
                 if key not in loaded_state["statistics"]:
                     loaded_state["statistics"][key] = default_stats[key]
         
-        for key in ["beads", "current_column", "bets", "bet_history"]:
+        for key in ["beads", "current_column"]:
             if key not in loaded_state:
                 loaded_state[key] = []
+        
+        # Remover dados desnecessários se existirem
+        for key in ["bank", "bets", "bet_history"]:
+            if key in loaded_state:
+                del loaded_state[key]
         
         return loaded_state
 
@@ -209,73 +204,12 @@ class BBDeepMobile:
             self.state["statistics"]["seq_empate"] += 1
             self.state["statistics"]["seq_vermelho"] = 0
         
-        self.resolve_bets(bead)
         self.save_state()
         
         # Auto-treino
         if self.state["settings"]["auto_train"]:
             if self.state["statistics"]["total_beads"] % self.state["settings"]["train_interval"] == 0:
                 self.train_model(auto=True)
-
-    def place_bet(self, color, amount):
-        if amount <= 0 or amount > self.state["bank"]:
-            return False
-        
-        bet = {
-            "id": datetime.now().timestamp(),
-            "color": color,
-            "amount": amount,
-            "placed_at": datetime.now().isoformat(),
-            "gale_count": 0
-        }
-        
-        self.state["bets"].append(bet)
-        self.state["bank"] -= amount
-        self.save_state()
-        return True
-
-    def resolve_bets(self, bead):
-        color = bead["color"]
-        tie_sum = bead.get("tie_sum")
-        
-        for bet in list(self.state["bets"]):
-            self.state["statistics"]["bets_count"] += 1
-            self.state["statistics"]["total_wagered"] += bet["amount"]
-            
-            if bet["color"] == color:
-                if color != "empate":
-                    payout = bet["amount"] * self.ODDS[color]
-                else:
-                    payout_multiplier = (self.TIE_PAYOUTS.get(tie_sum, 4) / 100) + 1
-                    payout = bet["amount"] * payout_multiplier
-                
-                profit = payout - bet["amount"]
-                self.state["bank"] += payout
-                self.state["statistics"]["profit"] += profit
-                self.state["statistics"]["total_won"] += payout
-                self.state["statistics"]["bets_won"] += 1
-                
-                if profit > self.state["statistics"]["max_win"]:
-                    self.state["statistics"]["max_win"] = profit
-                    self.state["statistics"]["max_win_percent"] = (profit / bet["amount"]) * 100
-                
-                bet["outcome"] = "won"
-                bet["payout"] = payout
-                
-            elif color == "empate" and bet["color"] in ["azul", "vermelho"]:
-                self.state["bank"] += bet["amount"]
-                bet["outcome"] = "push"
-                bet["payout"] = bet["amount"]
-            else:
-                self.state["statistics"]["bets_lost"] += 1
-                self.state["statistics"]["profit"] -= bet["amount"]
-                bet["outcome"] = "lost"
-                bet["payout"] = 0
-            
-            bet["resolved_at"] = datetime.now().isoformat()
-            self.state["bet_history"].append(bet)
-        
-        self.state["bets"] = []
 
     def train_model(self, auto=False):
         result = self.ml_engine.train_model(self.state, self.state["statistics"])
@@ -310,7 +244,7 @@ class BBDeepMobile:
     def save_state(self):
         self.data_manager.save_data(self.state, "app_state.json")
 
-    def reset_beads(self):
+    def reset_model(self):
         self.state["beads"] = []
         self.state["current_column"] = []
         self.state["last_color"] = None
@@ -318,134 +252,62 @@ class BBDeepMobile:
             "azul_count": 0, "vermelho_count": 0, "empate_count": 0,
             "total_beads": 0, "seq_vermelho": 0, "seq_empate": 0
         })
-        self.save_state()
-
-    def reset_bets(self):
-        for bet in self.state["bets"]:
-            self.state["bank"] += bet["amount"]
-        
-        self.state["bets"] = []
-        self.state["bet_history"] = []
-        self.state["statistics"].update({
-            "bets_count": 0, "bets_won": 0, "bets_lost": 0,
-            "max_win": 0, "max_win_percent": 0, "profit": 0,
-            "total_wagered": 0, "total_won": 0
+        self.state["ml_model"].update({
+            "trained": False, "accuracy": 0,
+            "predictions": {"azul": 44.5, "vermelho": 44.5, "empate": 11.0},
+            "last_trained": None, "training_count": 0,
+            "model_type": "Nenhum", "training_examples": 0,
+            "active_model": "Nenhum"
         })
-        self.save_state()
-
-    def reset_all(self):
-        default_state = {
-            "beads": [], "current_column": [], "last_color": None,
-            "bank": 100.0, "bets": [], "bet_history": [],
-            "statistics": {
-                "azul_count": 0, "vermelho_count": 0, "empate_count": 0,
-                "total_beads": 0, "bets_count": 0, "bets_won": 0, "bets_lost": 0,
-                "max_win": 0, "max_win_percent": 0, "seq_vermelho": 0, "seq_empate": 0,
-                "profit": 0, "total_wagered": 0, "total_won": 0
-            },
-            "ml_model": {
-                "trained": False, "accuracy": 0,
-                "predictions": {"azul": 44.5, "vermelho": 44.5, "empate": 11.0},
-                "last_trained": None, "training_count": 0,
-                "model_type": "Nenhum", "training_examples": 0,
-                "active_model": "Nenhum"
-            },
-            "settings": self.state["settings"]
-        }
-        
-        self.state.update(default_state)
         self.save_state()
 
 def main():
     st.set_page_config(
-        page_title="BB DEEP Mobile",
-        page_icon="🎰",
-        layout="wide",
+        page_title="BB DEEP Core",
+        page_icon="🤖",
+        layout="centered",
         initial_sidebar_state="collapsed"
     )
     
-    # CSS
+    # CSS Simplificado
     st.markdown("""
     <style>
-    .main-board {
-        background-color: #1a1a1a;
-        border: 2px solid #444;
-        border-radius: 10px;
-        padding: 15px;
-        margin: 10px 0;
-    }
-    .board-header {
-        font-size: 18px;
-        font-weight: bold;
-        color: white;
-        margin-bottom: 15px;
-        text-align: center;
-    }
-    .beads-grid {
-        display: grid;
-        grid-template-columns: repeat(10, 1fr);
-        gap: 5px;
-        margin: 10px 0;
-    }
-    .bead-column {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 3px;
-    }
-    .bead {
-        width: 35px;
-        height: 35px;
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-weight: bold;
-        color: white;
-        border: 2px solid white;
-        font-size: 14px;
-    }
-    .bead-azul { background-color: #2196f3; }
-    .bead-vermelho { background-color: #f44336; }
-    .bead-empate { background-color: #ffc107; color: black; }
-    .column-number {
-        font-size: 12px;
-        color: #888;
-        margin-top: 5px;
-    }
-    .current-column {
-        border: 2px dashed #fff;
-        padding: 5px;
-        border-radius: 8px;
-    }
-    
     .prediction-box { 
         border: 3px solid; 
         border-radius: 10px; 
-        padding: 15px; 
+        padding: 20px; 
         text-align: center; 
-        margin: 10px 0; 
+        margin: 15px 0; 
         font-weight: bold; 
-        font-size: 18px; 
+        font-size: 20px; 
     }
     .prediction-azul { border-color: #2196f3; background-color: rgba(33, 150, 243, 0.1); }
     .prediction-vermelho { border-color: #f44336; background-color: rgba(244, 67, 54, 0.1); }
     .prediction-empate { border-color: #ffc107; background-color: rgba(255, 193, 7, 0.1); }
     
     .control-panel {
-        background-color: #2a2a2a;
+        background-color: #f0f2f6;
         border-radius: 10px;
+        padding: 20px;
+        margin: 15px 0;
+    }
+    
+    .stat-box {
+        background-color: white;
+        border-radius: 8px;
         padding: 15px;
         margin: 10px 0;
+        border: 1px solid #e0e0e0;
     }
     </style>
     """, unsafe_allow_html=True)
     
-    st.title("🎰 BB DEEP - Mobile")
+    st.title("🤖 BB DEEP Core")
+    st.markdown("**Machine Learning para Previsão de Cores**")
     
-    # Inicializar app UMA VEZ
+    # Inicializar app
     if 'app' not in st.session_state:
-        st.session_state.app = BBDeepMobile()
+        st.session_state.app = BBDeepCore()
     
     app = st.session_state.app
     
@@ -453,77 +315,7 @@ def main():
     col1, col2 = st.columns([1, 1])
     
     with col1:
-        # QUADRO PRINCIPAL DE BEADS (como na app original)
-        st.markdown('<div class="main-board">', unsafe_allow_html=True)
-        st.markdown('<div class="board-header">🎯 BEADS VERTICAIS</div>', unsafe_allow_html=True)
-        
-        # Criar grid de colunas
-        all_columns = app.state["beads"] + [app.state["current_column"]] if app.state["current_column"] else app.state["beads"]
-        
-        if all_columns:
-            # Mostrar máximo de 10 colunas
-            display_columns = all_columns[-10:]
-            
-            st.markdown('<div class="beads-grid">', unsafe_allow_html=True)
-            
-            for i, column in enumerate(display_columns):
-                is_current = (i == len(display_columns) - 1 and column == app.state["current_column"])
-                column_class = "bead-column current-column" if is_current else "bead-column"
-                
-                st.markdown(f'<div class="{column_class}">', unsafe_allow_html=True)
-                
-                # Adicionar beads vazios para completar 6 posições
-                for row in range(6):
-                    if row < len(column):
-                        bead = column[row]
-                        color_class = f"bead-{bead['color']}"
-                        if bead['color'] == 'empate':
-                            display_text = str(bead.get('tie_sum', 'E'))
-                        else:
-                            display_text = bead['color'][0].upper()
-                        st.markdown(f'<div class="bead {color_class}">{display_text}</div>', unsafe_allow_html=True)
-                    else:
-                        # Bead vazio
-                        st.markdown('<div class="bead" style="background-color: #333; border: 2px dashed #666;"></div>', unsafe_allow_html=True)
-                
-                # Número da coluna
-                col_number = len(app.state["beads"]) + (1 if app.state["current_column"] else 0) - len(display_columns) + i + 1
-                status = " (Atual)" if is_current else ""
-                st.markdown(f'<div class="column-number">Coluna {col_number}{status}</div>', unsafe_allow_html=True)
-                
-                st.markdown('</div>', unsafe_allow_html=True)
-            
-            st.markdown('</div>', unsafe_allow_html=True)
-            
-            # Estatísticas do quadro
-            current_progress = len(app.state["current_column"])
-            st.write(f"**Progresso da coluna atual:** {current_progress}/6 beads")
-            st.write(f"**Total de colunas:** {len(app.state['beads'])}")
-            
-        else:
-            st.info("Nenhum bead registado ainda. Use os botões abaixo para começar.")
-        
-        st.markdown('</div>', unsafe_allow_html=True)
-        
-        # CONTROLES DE BEADS
-        st.markdown('<div class="control-panel">', unsafe_allow_html=True)
-        st.subheader("🎯 Registar Beads")
-        
-        col1a, col1b, col1c = st.columns(3)
-        with col1a:
-            if st.button("🔵 AZUL", use_container_width=True, key="btn_azul"):
-                app.register_bead('azul')
-        with col1b:
-            if st.button("🔴 VERMELHO", use_container_width=True, key="btn_vermelho"):
-                app.register_bead('vermelho')
-        with col1c:
-            tie_sum = st.selectbox("Soma EMPATE:", [2,3,4,5,6,7,8,9,10,11,12], key="tie_select")
-            if st.button("🟡 EMPATE", use_container_width=True, key="btn_empate"):
-                app.register_bead('empate', tie_sum)
-        st.markdown('</div>', unsafe_allow_html=True)
-    
-    with col2:
-        # PREVISÃO
+        # PREVISÃO ATUAL
         st.subheader("🔮 Próxima Previsão")
         next_color, confidence = app.get_next_prediction()
         
@@ -534,81 +326,122 @@ def main():
             
             st.markdown(f"""
             <div class="prediction-box {color_class}">
-                <div style="font-size: 24px; margin-bottom: 10px;">{color_emoji[next_color]}</div>
-                <div>{color_name[next_color]}</div>
-                <div style="font-size: 14px; margin-top: 5px;">{confidence:.1f}% confiança</div>
+                <div style="font-size: 28px; margin-bottom: 15px;">{color_emoji[next_color]}</div>
+                <div style="font-size: 24px;">{color_name[next_color]}</div>
+                <div style="font-size: 16px; margin-top: 10px;">{confidence:.1f}% confiança</div>
             </div>
             """, unsafe_allow_html=True)
+            
+            if app.state["ml_model"]["trained"]:
+                st.info(f"**Modelo:** {app.state['ml_model']['model_type']} | **Precisão:** {app.state['ml_model']['accuracy']:.1f}%")
         else:
-            st.info("🤖 Treine o modelo ML para obter previsões")
+            st.info("🤖 Registe alguns beads e treine o modelo para obter previsões")
         
-        # APOSTAS
+        # ESTATÍSTICAS
+        st.subheader("📊 Estatísticas")
+        col_stat1, col_stat2, col_stat3 = st.columns(3)
+        with col_stat1:
+            st.metric("🔵 Azul", app.state['statistics']['azul_count'])
+        with col_stat2:
+            st.metric("🔴 Vermelho", app.state['statistics']['vermelho_count'])
+        with col_stat3:
+            st.metric("🟡 Empate", app.state['statistics']['empate_count'])
+        
+        st.metric("🎯 Total Beads", app.state['statistics']['total_beads'])
+        
+        # SEQUÊNCIAS ATUAIS
+        st.subheader("📈 Sequências Atuais")
+        col_seq1, col_seq2 = st.columns(2)
+        with col_seq1:
+            st.metric("🔴 Seq Vermelho", app.state['statistics']['seq_vermelho'])
+        with col_seq2:
+            st.metric("🟡 Seq Empate", app.state['statistics']['seq_empate'])
+    
+    with col2:
+        # REGISTO DE BEADS
         st.markdown('<div class="control-panel">', unsafe_allow_html=True)
-        st.subheader("💰 Fazer Aposta")
+        st.subheader("🎯 Registar Beads")
         
-        bet_amount = st.number_input("Valor da aposta:", value=5.0, min_value=0.1, step=0.5, key="bet_amount")
-        
-        col2a, col2b, col2c = st.columns(3)
-        with col2a:
-            if st.button("Apostar 🔵", use_container_width=True, key="bet_azul"):
-                if app.place_bet('azul', bet_amount):
-                    st.success(f"✅ Aposta de {bet_amount} em AZUL!")
-        with col2b:
-            if st.button("Apostar 🔴", use_container_width=True, key="bet_vermelho"):
-                if app.place_bet('vermelho', bet_amount):
-                    st.success(f"✅ Aposta de {bet_amount} em VERMELHO!")
-        with col2c:
-            if st.button("Apostar 🟡", use_container_width=True, key="bet_empate"):
-                if app.place_bet('empate', bet_amount):
-                    st.success(f"✅ Aposta de {bet_amount} em EMPATE!")
+        col_btn1, col_btn2, col_btn3 = st.columns(3)
+        with col_btn1:
+            if st.button("🔵 AZUL", use_container_width=True, key="btn_azul"):
+                app.register_bead('azul')
+                st.success("Bead AZUL registado!")
+        with col_btn2:
+            if st.button("🔴 VERMELHO", use_container_width=True, key="btn_vermelho"):
+                app.register_bead('vermelho')
+                st.success("Bead VERMELHO registado!")
+        with col_btn3:
+            tie_sum = st.selectbox("Soma para EMPATE:", [2,3,4,5,6,7,8,9,10,11,12], key="tie_select")
+            if st.button("🟡 EMPATE", use_container_width=True, key="btn_empate"):
+                app.register_bead('empate', tie_sum)
+                st.success(f"Bead EMPATE ({tie_sum}) registado!")
         st.markdown('</div>', unsafe_allow_html=True)
         
-        # APOSTAS ATIVAS
-        st.subheader("📋 Apostas Ativas")
-        if app.state["bets"]:
-            for bet in app.state["bets"]:
-                emoji = "🔵" if bet['color'] == 'azul' else "🔴" if bet['color'] == 'vermelho' else "🟡"
-                st.write(f"{emoji} **{bet['color'].upper()}**: {bet['amount']:.1f}x")
-        else:
-            st.info("Nenhuma aposta ativa")
+        # INFORMAÇÃO DO MODELO
+        st.subheader("🤖 Estado do Modelo")
         
-        # ESTATÍSTICAS RÁPIDAS
-        st.subheader("📊 Estatísticas")
-        col_stat1, col_stat2 = st.columns(2)
-        with col_stat1:
-            st.metric("💰 Banca", f"{app.state['bank']:.1f}x")
-            st.metric("🔵 Azul", app.state['statistics']['azul_count'])
-            st.metric("🔴 Vermelho", app.state['statistics']['vermelho_count'])
-        with col_stat2:
-            st.metric("📈 Lucro", f"{app.state['statistics']['profit']:+.1f}x")
-            st.metric("🟡 Empate", app.state['statistics']['empate_count'])
-            st.metric("🎯 Total", app.state['statistics']['total_beads'])
+        if app.state["ml_model"]["trained"]:
+            st.success("✅ Modelo treinado e ativo")
+            
+            # Mostrar probabilidades detalhadas
+            pred = app.state["ml_model"]["predictions"]
+            st.markdown("**Probabilidades detalhadas:**")
+            col_prob1, col_prob2, col_prob3 = st.columns(3)
+            with col_prob1:
+                st.metric("🔵 Azul", f"{pred['azul']:.1f}%")
+            with col_prob2:
+                st.metric("🔴 Vermelho", f"{pred['vermelho']:.1f}%")
+            with col_prob3:
+                st.metric("🟡 Empate", f"{pred['empate']:.1f}%")
+            
+            st.write(f"**Último treino:** {app.state['ml_model']['last_trained'][:19].replace('T', ' ')}")
+            st.write(f"**Exemplos de treino:** {app.state['ml_model']['training_examples']}")
+        else:
+            st.warning("⚠️ Modelo não treinado")
+        
+        # GESTÃO DO MODELO
+        st.markdown('<div class="control-panel">', unsafe_allow_html=True)
+        st.subheader("⚙️ Gestão do Modelo")
+        
+        col_mgmt1, col_mgmt2 = st.columns(2)
+        with col_mgmt1:
+            if st.button("🎯 Treinar Modelo", use_container_width=True, key="train_ml"):
+                if app.train_model():
+                    st.success("✅ Modelo treinado com sucesso!")
+                else:
+                    st.error("❌ Erro no treino do modelo")
+        
+        with col_mgmt2:
+            if st.button("🔄 Reset Modelo", use_container_width=True, key="reset_model"):
+                app.reset_model()
+                st.success("✅ Modelo resetado com sucesso!")
+        
+        # Configurações
+        st.subheader("🔧 Configurações")
+        auto_train = st.checkbox("Auto-treino", value=app.state["settings"]["auto_train"], key="auto_train")
+        train_interval = st.number_input("Intervalo de auto-treino (beads):", 
+                                       value=app.state["settings"]["train_interval"],
+                                       min_value=1, max_value=50, key="train_interval")
+        
+        if st.button("💾 Guardar Configurações", use_container_width=True, key="save_config"):
+            app.state["settings"]["auto_train"] = auto_train
+            app.state["settings"]["train_interval"] = train_interval
+            app.save_state()
+            st.success("✅ Configurações guardadas!")
+        
+        st.markdown('</div>', unsafe_allow_html=True)
 
-    # BOTÕES DE GESTÃO
-    st.markdown("---")
-    st.subheader("⚙️ Gestão")
-    
-    col_manage1, col_manage2, col_manage3, col_manage4 = st.columns(4)
-    
-    with col_manage1:
-        if st.button("🎯 Treinar Modelo", use_container_width=True):
-            if app.train_model():
-                st.success("✅ Modelo treinado!")
-    
-    with col_manage2:
-        if st.button("🔄 Reset Beads", use_container_width=True):
-            app.reset_beads()
-            st.success("✅ Beads resetados!")
-    
-    with col_manage3:
-        if st.button("💰 Reset Apostas", use_container_width=True):
-            app.reset_bets()
-            st.success("✅ Apostas resetadas!")
-    
-    with col_manage4:
-        if st.button("💥 Reset Tudo", use_container_width=True):
-            app.reset_all()
-            st.success("✅ Reset completo!")
+    # Informação adicional
+    with st.expander("📋 Informação do Sistema"):
+        st.write(f"**Total de colunas completas:** {len(app.state['beads'])}")
+        st.write(f"**Beads na coluna atual:** {len(app.state['current_column'])}")
+        if app.state['current_column']:
+            last_beads = ", ".join([bead['color'][0].upper() + (str(bead.get('tie_sum', '')) if bead['color'] == 'empate' else '') 
+                                  for bead in app.state['current_column'][-3:]])
+            st.write(f"**Últimos beads:** {last_beads}")
+        
+        st.write(f"**Contador de treinos:** {app.state['ml_model']['training_count']}")
 
 if __name__ == "__main__":
     main()
