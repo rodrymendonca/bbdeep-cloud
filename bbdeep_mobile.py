@@ -101,7 +101,7 @@ class MLEngine:
         return self.model_trained
 
 # ===== MAIN APP =====
-class BBDeepCore:
+class BBDeepMobile:
     def __init__(self):
         self.data_manager = DataManager()
         self.ml_engine = MLEngine()
@@ -263,185 +263,272 @@ class BBDeepCore:
 
 def main():
     st.set_page_config(
-        page_title="BB DEEP Core",
+        page_title="BB DEEP Mobile",
         page_icon="🤖",
         layout="centered",
         initial_sidebar_state="collapsed"
     )
     
-    # CSS Simplificado
+    # CSS Otimizado para Mobile
     st.markdown("""
     <style>
-    .prediction-box { 
-        border: 3px solid; 
-        border-radius: 10px; 
-        padding: 20px; 
-        text-align: center; 
-        margin: 15px 0; 
-        font-weight: bold; 
-        font-size: 20px; 
+    /* Layout geral para mobile */
+    .main-container {
+        width: 100%;
+        max-width: 480px;
+        margin: 0 auto;
+        padding: 10px;
     }
-    .prediction-azul { border-color: #2196f3; background-color: rgba(33, 150, 243, 0.1); }
-    .prediction-vermelho { border-color: #f44336; background-color: rgba(244, 67, 54, 0.1); }
-    .prediction-empate { border-color: #ffc107; background-color: rgba(255, 193, 7, 0.1); }
     
-    .control-panel {
-        background-color: #f0f2f6;
-        border-radius: 10px;
-        padding: 20px;
+    /* Previsão em destaque */
+    .prediction-mobile {
+        border-radius: 15px;
+        padding: 25px 15px;
+        text-align: center;
         margin: 15px 0;
+        font-weight: bold;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+    .prediction-azul { 
+        background: linear-gradient(135deg, #2196f3, #1976d2);
+        color: white;
+    }
+    .prediction-vermelho { 
+        background: linear-gradient(135deg, #f44336, #d32f2f);
+        color: white;
+    }
+    .prediction-empate { 
+        background: linear-gradient(135deg, #ffc107, #ffa000);
+        color: black;
     }
     
-    .stat-box {
+    /* Botões grandes para mobile */
+    .mobile-btn {
+        height: 60px !important;
+        font-size: 18px !important;
+        font-weight: bold !important;
+        border-radius: 12px !important;
+        margin: 8px 0 !important;
+    }
+    .btn-azul {
+        background-color: #2196f3 !important;
+        color: white !important;
+        border: none !important;
+    }
+    .btn-vermelho {
+        background-color: #f44336 !important;
+        color: white !important;
+        border: none !important;
+    }
+    .btn-empate {
+        background-color: #ffc107 !important;
+        color: black !important;
+        border: none !important;
+    }
+    
+    /* Cartões de informação */
+    .info-card {
         background-color: white;
-        border-radius: 8px;
+        border-radius: 12px;
         padding: 15px;
         margin: 10px 0;
-        border: 1px solid #e0e0e0;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        border-left: 4px solid #2196f3;
     }
+    
+    /* Estatísticas em grid */
+    .stats-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        margin: 15px 0;
+    }
+    .stat-item {
+        text-align: center;
+        padding: 12px;
+        border-radius: 10px;
+        background-color: #f8f9fa;
+    }
+    
+    /* Ajustes gerais do Streamlit */
+    .stButton button {
+        width: 100% !important;
+    }
+    
+    /* Títulos menores para mobile */
+    h1 {
+        font-size: 24px !important;
+        text-align: center;
+    }
+    h2 {
+        font-size: 20px !important;
+    }
+    h3 {
+        font-size: 18px !important;
+    }
+    
+    /* Esconder menu e footer do Streamlit */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
     </style>
     """, unsafe_allow_html=True)
     
-    st.title("🤖 BB DEEP Core")
-    st.markdown("**Machine Learning para Previsão de Cores**")
+    # Container principal
+    st.markdown('<div class="main-container">', unsafe_allow_html=True)
+    
+    st.title("🤖 BB DEEP")
+    st.markdown("**Previsão por Machine Learning**")
     
     # Inicializar app
     if 'app' not in st.session_state:
-        st.session_state.app = BBDeepCore()
+        st.session_state.app = BBDeepMobile()
     
     app = st.session_state.app
     
-    # Layout principal
-    col1, col2 = st.columns([1, 1])
+    # SEÇÃO 1: PREVISÃO EM DESTAQUE
+    st.markdown("---")
+    st.subheader("🎯 PREVISÃO ATUAL")
     
-    with col1:
-        # PREVISÃO ATUAL
-        st.subheader("🔮 Próxima Previsão")
-        next_color, confidence = app.get_next_prediction()
-        
-        if next_color:
-            color_name = {"azul": "AZUL", "vermelho": "VERMELHO", "empate": "EMPATE"}
-            color_class = f"prediction-{next_color}"
-            color_emoji = {"azul": "🔵", "vermelho": "🔴", "empate": "🟡"}
-            
-            st.markdown(f"""
-            <div class="prediction-box {color_class}">
-                <div style="font-size: 28px; margin-bottom: 15px;">{color_emoji[next_color]}</div>
-                <div style="font-size: 24px;">{color_name[next_color]}</div>
-                <div style="font-size: 16px; margin-top: 10px;">{confidence:.1f}% confiança</div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            if app.state["ml_model"]["trained"]:
-                st.info(f"**Modelo:** {app.state['ml_model']['model_type']} | **Precisão:** {app.state['ml_model']['accuracy']:.1f}%")
-        else:
-            st.info("🤖 Registe alguns beads e treine o modelo para obter previsões")
-        
-        # ESTATÍSTICAS
-        st.subheader("📊 Estatísticas")
-        col_stat1, col_stat2, col_stat3 = st.columns(3)
-        with col_stat1:
-            st.metric("🔵 Azul", app.state['statistics']['azul_count'])
-        with col_stat2:
-            st.metric("🔴 Vermelho", app.state['statistics']['vermelho_count'])
-        with col_stat3:
-            st.metric("🟡 Empate", app.state['statistics']['empate_count'])
-        
-        st.metric("🎯 Total Beads", app.state['statistics']['total_beads'])
-        
-        # SEQUÊNCIAS ATUAIS
-        st.subheader("📈 Sequências Atuais")
-        col_seq1, col_seq2 = st.columns(2)
-        with col_seq1:
-            st.metric("🔴 Seq Vermelho", app.state['statistics']['seq_vermelho'])
-        with col_seq2:
-            st.metric("🟡 Seq Empate", app.state['statistics']['seq_empate'])
+    next_color, confidence = app.get_next_prediction()
     
-    with col2:
-        # REGISTO DE BEADS
-        st.markdown('<div class="control-panel">', unsafe_allow_html=True)
-        st.subheader("🎯 Registar Beads")
+    if next_color:
+        color_name = {"azul": "AZUL", "vermelho": "VERMELHO", "empate": "EMPATE"}
+        color_class = f"prediction-{next_color}"
+        color_emoji = {"azul": "🔵", "vermelho": "🔴", "empate": "🟡"}
         
-        col_btn1, col_btn2, col_btn3 = st.columns(3)
-        with col_btn1:
-            if st.button("🔵 AZUL", use_container_width=True, key="btn_azul"):
-                app.register_bead('azul')
-                st.success("Bead AZUL registado!")
-        with col_btn2:
-            if st.button("🔴 VERMELHO", use_container_width=True, key="btn_vermelho"):
-                app.register_bead('vermelho')
-                st.success("Bead VERMELHO registado!")
-        with col_btn3:
-            tie_sum = st.selectbox("Soma para EMPATE:", [2,3,4,5,6,7,8,9,10,11,12], key="tie_select")
-            if st.button("🟡 EMPATE", use_container_width=True, key="btn_empate"):
-                app.register_bead('empate', tie_sum)
-                st.success(f"Bead EMPATE ({tie_sum}) registado!")
-        st.markdown('</div>', unsafe_allow_html=True)
-        
-        # INFORMAÇÃO DO MODELO
-        st.subheader("🤖 Estado do Modelo")
+        st.markdown(f"""
+        <div class="prediction-mobile {color_class}">
+            <div style="font-size: 32px; margin-bottom: 10px;">{color_emoji[next_color]}</div>
+            <div style="font-size: 22px; margin-bottom: 5px;">{color_name[next_color]}</div>
+            <div style="font-size: 16px; opacity: 0.9;">{confidence:.1f}% confiança</div>
+        </div>
+        """, unsafe_allow_html=True)
         
         if app.state["ml_model"]["trained"]:
-            st.success("✅ Modelo treinado e ativo")
-            
-            # Mostrar probabilidades detalhadas
-            pred = app.state["ml_model"]["predictions"]
-            st.markdown("**Probabilidades detalhadas:**")
-            col_prob1, col_prob2, col_prob3 = st.columns(3)
-            with col_prob1:
-                st.metric("🔵 Azul", f"{pred['azul']:.1f}%")
-            with col_prob2:
-                st.metric("🔴 Vermelho", f"{pred['vermelho']:.1f}%")
-            with col_prob3:
-                st.metric("🟡 Empate", f"{pred['empate']:.1f}%")
-            
-            st.write(f"**Último treino:** {app.state['ml_model']['last_trained'][:19].replace('T', ' ')}")
-            st.write(f"**Exemplos de treino:** {app.state['ml_model']['training_examples']}")
-        else:
-            st.warning("⚠️ Modelo não treinado")
+            st.caption(f"Modelo: {app.state['ml_model']['model_type']} | Precisão: {app.state['ml_model']['accuracy']:.1f}%")
+    else:
+        st.info("📊 Registe alguns beads e treine o modelo para obter previsões")
+    
+    # SEÇÃO 2: REGISTO DE BEADS
+    st.markdown("---")
+    st.subheader("📝 REGISTAR BEAD")
+    
+    # Botões grandes para registo
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("🔵 AZUL", key="btn_azul", use_container_width=True):
+            app.register_bead('azul')
+            st.success("Bead AZUL registado!")
+    
+    with col2:
+        if st.button("🔴 VERMELHO", key="btn_vermelho", use_container_width=True):
+            app.register_bead('vermelho')
+            st.success("Bead VERMELHO registado!")
+    
+    # Empate com seleção
+    st.markdown("**Empate:**")
+    tie_col1, tie_col2 = st.columns([2, 1])
+    with tie_col1:
+        tie_sum = st.selectbox("Soma:", [2,3,4,5,6,7,8,9,10,11,12], key="tie_select", label_visibility="collapsed")
+    with tie_col2:
+        if st.button("🟡 REGISTAR", key="btn_empate", use_container_width=True):
+            app.register_bead('empate', tie_sum)
+            st.success(f"Bead EMPATE ({tie_sum}) registado!")
+    
+    # SEÇÃO 3: ESTATÍSTICAS RÁPIDAS
+    st.markdown("---")
+    st.subheader("📊 ESTATÍSTICAS")
+    
+    # Grid de estatísticas
+    st.markdown('<div class="stats-grid">', unsafe_allow_html=True)
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("🔵 Azul", app.state['statistics']['azul_count'])
+        st.metric("🎯 Total", app.state['statistics']['total_beads'])
+        st.metric("🔴 Seq V", app.state['statistics']['seq_vermelho'])
+    
+    with col2:
+        st.metric("🔴 Vermelho", app.state['statistics']['vermelho_count'])
+        st.metric("🟡 Empate", app.state['statistics']['empate_count'])
+        st.metric("🟡 Seq E", app.state['statistics']['seq_empate'])
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    # SEÇÃO 4: INFORMAÇÃO DO MODELO
+    st.markdown("---")
+    st.subheader("🤖 MODELO ML")
+    
+    if app.state["ml_model"]["trained"]:
+        # Probabilidades detalhadas
+        pred = app.state["ml_model"]["predictions"]
         
-        # GESTÃO DO MODELO
-        st.markdown('<div class="control-panel">', unsafe_allow_html=True)
-        st.subheader("⚙️ Gestão do Modelo")
+        st.markdown("**Probabilidades:**")
+        prob_col1, prob_col2, prob_col3 = st.columns(3)
+        with prob_col1:
+            st.progress(pred['azul']/100)
+            st.caption(f"🔵 {pred['azul']:.1f}%")
+        with prob_col2:
+            st.progress(pred['vermelho']/100)
+            st.caption(f"🔴 {pred['vermelho']:.1f}%")
+        with prob_col3:
+            st.progress(pred['empate']/100)
+            st.caption(f"🟡 {pred['empate']:.1f}%")
         
-        col_mgmt1, col_mgmt2 = st.columns(2)
-        with col_mgmt1:
-            if st.button("🎯 Treinar Modelo", use_container_width=True, key="train_ml"):
-                if app.train_model():
-                    st.success("✅ Modelo treinado com sucesso!")
-                else:
-                    st.error("❌ Erro no treino do modelo")
-        
-        with col_mgmt2:
-            if st.button("🔄 Reset Modelo", use_container_width=True, key="reset_model"):
-                app.reset_model()
-                st.success("✅ Modelo resetado com sucesso!")
-        
-        # Configurações
-        st.subheader("🔧 Configurações")
+        st.caption(f"Treinado: {app.state['ml_model']['last_trained'][:19].replace('T', ' ')}")
+        st.caption(f"Exemplos: {app.state['ml_model']['training_examples']} beads")
+    
+    else:
+        st.warning("⚠️ Modelo não treinado")
+    
+    # SEÇÃO 5: GESTÃO
+    st.markdown("---")
+    st.subheader("⚙️ GESTÃO")
+    
+    # Botões de gestão
+    col_mgmt1, col_mgmt2 = st.columns(2)
+    with col_mgmt1:
+        if st.button("🎯 TREINAR", key="train_ml", use_container_width=True):
+            if app.train_model():
+                st.success("✅ Modelo treinado!")
+            else:
+                st.error("❌ Erro no treino")
+    
+    with col_mgmt2:
+        if st.button("🔄 RESET", key="reset_model", use_container_width=True):
+            app.reset_model()
+            st.success("✅ Modelo resetado!")
+    
+    # Configurações
+    with st.expander("🔧 CONFIGURAÇÕES"):
         auto_train = st.checkbox("Auto-treino", value=app.state["settings"]["auto_train"], key="auto_train")
-        train_interval = st.number_input("Intervalo de auto-treino (beads):", 
-                                       value=app.state["settings"]["train_interval"],
-                                       min_value=1, max_value=50, key="train_interval")
+        train_interval = st.slider("Intervalo auto-treino:", 
+                                 min_value=1, max_value=20, 
+                                 value=app.state["settings"]["train_interval"],
+                                 key="train_interval")
         
-        if st.button("💾 Guardar Configurações", use_container_width=True, key="save_config"):
+        if st.button("💾 GUARDAR", key="save_config", use_container_width=True):
             app.state["settings"]["auto_train"] = auto_train
             app.state["settings"]["train_interval"] = train_interval
             app.save_state()
             st.success("✅ Configurações guardadas!")
-        
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    # Informação adicional
-    with st.expander("📋 Informação do Sistema"):
-        st.write(f"**Total de colunas completas:** {len(app.state['beads'])}")
+    
+    # SEÇÃO 6: INFORMAÇÃO ADICIONAL
+    with st.expander("📋 INFORMAÇÃO"):
+        st.write(f"**Colunas completas:** {len(app.state['beads'])}")
         st.write(f"**Beads na coluna atual:** {len(app.state['current_column'])}")
         if app.state['current_column']:
-            last_beads = ", ".join([bead['color'][0].upper() + (str(bead.get('tie_sum', '')) if bead['color'] == 'empate' else '') 
+            last_beads = " | ".join([bead['color'][0].upper() + (str(bead.get('tie_sum', '')) if bead['color'] == 'empate' else '') 
                                   for bead in app.state['current_column'][-3:]])
             st.write(f"**Últimos beads:** {last_beads}")
         
-        st.write(f"**Contador de treinos:** {app.state['ml_model']['training_count']}")
+        st.write(f"**Treinos realizados:** {app.state['ml_model']['training_count']}")
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Rodapé
+    st.markdown("---")
+    st.caption("🤖 BB DEEP Mobile v1.0 | Machine Learning para Previsões")
 
 if __name__ == "__main__":
     main()
