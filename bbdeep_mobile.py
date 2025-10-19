@@ -297,6 +297,8 @@ class BBDeepMobile:
             "beads": [],
             "current_column": [],
             "last_color": None,
+            "previous_prediction": None,  # Nova: previsão anterior
+            "gale_count": 0,  # Nova: contador de Gale
             "statistics": {
                 "azul_count": 0, "vermelho_count": 0, "empate_count": 0,
                 "total_beads": 0, "seq_vermelho": 0, "seq_empate": 0
@@ -309,7 +311,7 @@ class BBDeepMobile:
                 "active_model": "Nenhum"
             },
             "settings": {
-                "auto_train": True, "train_interval": 5
+                "auto_train": True, "train_interval": 1  # Default para 1
             }
         }
         
@@ -332,9 +334,9 @@ class BBDeepMobile:
                 if key not in loaded_state["statistics"]:
                     loaded_state["statistics"][key] = default_stats[key]
         
-        for key in ["beads", "current_column"]:
+        for key in ["beads", "current_column", "previous_prediction", "gale_count"]:
             if key not in loaded_state:
-                loaded_state[key] = []
+                loaded_state[key] = [] if key in ["beads", "current_column"] else None if key == "previous_prediction" else 0
         
         return loaded_state
 
@@ -343,6 +345,9 @@ class BBDeepMobile:
         return st.session_state.app_state
 
     def register_bead(self, color):
+        # Guardar previsão atual ANTES de registar
+        current_prediction, _ = self.get_next_prediction()
+        
         bead = {"color": color}
         
         current_col = self.state["current_column"]
@@ -378,12 +383,34 @@ class BBDeepMobile:
             self.state["statistics"]["seq_empate"] += 1
             self.state["statistics"]["seq_vermelho"] = 0
         
-        self.save_state()
+        # LÓGICA DO GALE - VERIFICAR APÓS REGISTRO
+        if current_prediction and current_prediction != color:
+            # Previsão errou - verificar se mantém a mesma previsão após treino
+            if self.state["settings"]["auto_train"]:
+                if self.state["statistics"]["total_beads"] % self.state["settings"]["train_interval"] == 0:
+                    self.train_model(auto=True)
+                    
+                    # Verificar se a nova previsão é a mesma que a anterior
+                    new_prediction, _ = self.get_next_prediction()
+                    if new_prediction == current_prediction:
+                        # Mantém a mesma previsão - INCREMENTAR GALE
+                        self.state["gale_count"] += 1
+                    else:
+                        # Mudou de previsão - RESETAR GALE
+                        self.state["gale_count"] = 0
+            else:
+                # Sem auto-treino, não podemos verificar - manter gale count?
+                pass
+        else:
+            # Previsão acertou ou não havia previsão - RESETAR GALE
+            self.state["gale_count"] = 0
+            
+            # Auto-treino normal
+            if self.state["settings"]["auto_train"]:
+                if self.state["statistics"]["total_beads"] % self.state["settings"]["train_interval"] == 0:
+                    self.train_model(auto=True)
         
-        # Auto-treino
-        if self.state["settings"]["auto_train"]:
-            if self.state["statistics"]["total_beads"] % self.state["settings"]["train_interval"] == 0:
-                self.train_model(auto=True)
+        self.save_state()
 
     def train_model(self, auto=False):
         result = self.ml_engine.train_model(self.state, self.state["statistics"])
@@ -423,6 +450,8 @@ class BBDeepMobile:
         self.state["beads"] = []
         self.state["current_column"] = []
         self.state["last_color"] = None
+        self.state["previous_prediction"] = None
+        self.state["gale_count"] = 0
         self.state["statistics"].update({
             "azul_count": 0, "vermelho_count": 0, "empate_count": 0,
             "total_beads": 0, "seq_vermelho": 0, "seq_empate": 0
@@ -439,7 +468,7 @@ class BBDeepMobile:
 
 def main():
     st.set_page_config(
-        page_title="BB DEEP Mobile",
+        page_title="BB DEEP Mobile + GALE",
         page_icon="🤖",
         layout="centered",
         initial_sidebar_state="collapsed"
@@ -481,6 +510,15 @@ def main():
         background: linear-gradient(135deg, #ffc107, #ffa000);
         color: black;
     }
+    .prediction-gale {
+        border: 3px solid #ff0000;
+        animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+        0% { border-color: #ff0000; }
+        50% { border-color: #ff6666; }
+        100% { border-color: #ff0000; }
+    }
     .stButton button {
         height: 45px !important;
         font-size: 16px !important;
@@ -496,12 +534,20 @@ def main():
     div[data-testid="stVerticalBlock"] > div {
         padding: 0.25rem 0;
     }
+    .gale-indicator {
+        background: linear-gradient(135deg, #ff0000, #cc0000);
+        color: white;
+        padding: 3px 8px;
+        border-radius: 10px;
+        font-size: 12px;
+        margin-left: 5px;
+    }
     </style>
     """, unsafe_allow_html=True)
     
     st.markdown('<div class="main-container">', unsafe_allow_html=True)
     
-    st.title("🤖 BB DEEP - ML Real")
+    st.title("🤖 BB DEEP - ML + GALE")
     
     # Inicializar app
     if 'app' not in st.session_state:
@@ -509,17 +555,27 @@ def main():
     
     app = st.session_state.app
     
-    # PREVISÃO
+    # PREVISÃO COM INDICADOR GALE
     next_color, confidence = app.get_next_prediction()
+    gale_count = app.state["gale_count"]
     
     if next_color:
         color_name = {"azul": "AZUL", "vermelho": "VERMELHO", "empate": "EMPATE"}
         color_class = f"prediction-{next_color}"
         color_emoji = {"azul": "🔵", "vermelho": "🔴", "empate": "🟡"}
         
+        # Adicionar classe GALE se estiver em Gale
+        if gale_count > 0:
+            color_class += " prediction-gale"
+        
+        # Texto do Gale
+        gale_text = f"<span class='gale-indicator'>{gale_count}º GALE</span>" if gale_count > 0 else ""
+        
         st.markdown(f"""
         <div class="prediction-compact {color_class}">
-            <div style="font-size: 18px; margin-bottom: 2px;">PRÓXIMA: {color_emoji[next_color]} {color_name[next_color]}</div>
+            <div style="font-size: 18px; margin-bottom: 2px;">
+                PRÓXIMA: {color_emoji[next_color]} {color_name[next_color]} {gale_text}
+            </div>
             <div style="font-size: 14px;">{confidence:.1f}% confiança</div>
         </div>
         """, unsafe_allow_html=True)
@@ -575,6 +631,11 @@ def main():
     with col6:
         st.metric("🟡 Seq", app.state['statistics']['seq_empate'], delta=None)
     
+    # INDICADOR GALE
+    if gale_count > 0:
+        st.markdown("---")
+        st.warning(f"🎯 **EM {gale_count}º GALE** - Mantendo previsão após erro")
+    
     # PROBABILIDADES
     if app.state["ml_model"]["trained"]:
         st.markdown("---")
@@ -615,6 +676,7 @@ def main():
         st.write(f"**Precisão:** {app.state['ml_model']['accuracy']:.1f}%")
         st.write(f"**Exemplos treino:** {app.state['ml_model']['training_examples']}")
         st.write(f"**Total treinos:** {app.state['ml_model']['training_count']}")
+        st.write(f"**Gale atual:** {app.state['gale_count']}")
         
         if app.state['current_column']:
             st.write("**Últimas jogadas:**")
@@ -628,7 +690,7 @@ def main():
     
     # MENSAGEM FINAL
     st.markdown("---")
-    st.markdown("<div style='text-align: center; color: #666; font-size: 14px;'>🤖 ML Real | feito com ❤️</div>", unsafe_allow_html=True)
+    st.markdown("<div style='text-align: center; color: #666; font-size: 14px;'>🤖 ML Real + GALE | feito com ❤️</div>", unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
