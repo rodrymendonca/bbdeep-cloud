@@ -178,15 +178,16 @@ class BBDeepMobile:
         
         current_col = self.state["current_column"]
         
-        # CORREÇÃO: Sempre que a cor muda OU a coluna atingiu 6 beads, fecha a coluna atual
-        if current_col and (current_col[-1]["color"] != color or len(current_col) >= 6):
-            self.state["beads"].append(current_col.copy())
-            self.state["current_column"] = [bead]
-        else:
-            # Continua na mesma coluna
+        # Se a coluna atual está vazia OU a cor é a mesma E ainda não atingiu 6 beads
+        if not current_col or (current_col[-1]["color"] == color and len(current_col) < 6):
             self.state["current_column"].append(bead)
+        else:
+            # Cor diferente OU atingiu 6 beads - fecha a coluna atual e inicia nova
+            if current_col:
+                self.state["beads"].append(current_col.copy())
+            self.state["current_column"] = [bead]
         
-        # CORREÇÃO: Se a coluna atual atingiu 6 beads, fecha automaticamente
+        # Se a coluna atual atingiu 6 beads, fecha automaticamente
         if len(self.state["current_column"]) >= 6:
             self.state["beads"].append(self.state["current_column"].copy())
             self.state["current_column"] = []
@@ -366,30 +367,77 @@ def main():
     # CSS
     st.markdown("""
     <style>
-    .bead-display { display: flex; gap: 5px; margin: 10px 0; }
-    .bead { width: 35px; height: 35px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; color: white; border: 2px solid white; font-size: 16px; }
+    .main-board {
+        background-color: #1a1a1a;
+        border: 2px solid #444;
+        border-radius: 10px;
+        padding: 15px;
+        margin: 10px 0;
+    }
+    .board-header {
+        font-size: 18px;
+        font-weight: bold;
+        color: white;
+        margin-bottom: 15px;
+        text-align: center;
+    }
+    .beads-grid {
+        display: grid;
+        grid-template-columns: repeat(10, 1fr);
+        gap: 5px;
+        margin: 10px 0;
+    }
+    .bead-column {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 3px;
+    }
+    .bead {
+        width: 35px;
+        height: 35px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: bold;
+        color: white;
+        border: 2px solid white;
+        font-size: 14px;
+    }
     .bead-azul { background-color: #2196f3; }
     .bead-vermelho { background-color: #f44336; }
     .bead-empate { background-color: #ffc107; color: black; }
-    .column-container { border: 2px solid #444; border-radius: 8px; padding: 10px; margin: 8px 0; background-color: #1a1a1a; }
-    .column-header { font-weight: bold; margin-bottom: 8px; color: #fff; }
-    .prediction-box { border: 3px solid; border-radius: 10px; padding: 15px; text-align: center; margin: 10px 0; font-weight: bold; font-size: 18px; }
+    .column-number {
+        font-size: 12px;
+        color: #888;
+        margin-top: 5px;
+    }
+    .current-column {
+        border: 2px dashed #fff;
+        padding: 5px;
+        border-radius: 8px;
+    }
+    
+    .prediction-box { 
+        border: 3px solid; 
+        border-radius: 10px; 
+        padding: 15px; 
+        text-align: center; 
+        margin: 10px 0; 
+        font-weight: bold; 
+        font-size: 18px; 
+    }
     .prediction-azul { border-color: #2196f3; background-color: rgba(33, 150, 243, 0.1); }
     .prediction-vermelho { border-color: #f44336; background-color: rgba(244, 67, 54, 0.1); }
     .prediction-empate { border-color: #ffc107; background-color: rgba(255, 193, 7, 0.1); }
     
-    /* NOVO CSS PARA BEADS VERTICAIS - COMO NO ORIGINAL */
-    .beads-vertical-container { display: flex; flex-direction: column; gap: 5px; margin: 10px 0; }
-    .bead-vertical { width: 35px; height: 35px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; color: white; border: 2px solid white; font-size: 16px; margin-bottom: 5px; }
-    .bead-vertical-azul { background-color: #2196f3; }
-    .bead-vertical-vermelho { background-color: #f44336; }
-    .bead-vertical-empate { background-color: #ffc107; color: black; font-size: 14px; }
-    .columns-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(50px, 1fr)); gap: 10px; margin: 15px 0; }
-    .column-vertical { display: flex; flex-direction: column; align-items: center; gap: 2px; }
-    .column-label { font-size: 12px; color: #888; margin-bottom: 5px; }
-    
-    /* Estilo para mostrar o valor do empate */
-    .tie-value { font-size: 12px; font-weight: bold; }
+    .control-panel {
+        background-color: #2a2a2a;
+        border-radius: 10px;
+        padding: 15px;
+        margin: 10px 0;
+    }
     </style>
     """, unsafe_allow_html=True)
     
@@ -402,223 +450,165 @@ def main():
     app = st.session_state.app
     
     # Layout principal
-    tab1, tab2, tab3 = st.tabs(["🎯 Beads & Apostas", "📊 Estatísticas", "⚙️ Configurações"])
+    col1, col2 = st.columns([1, 1])
     
-    with tab1:
-        col1, col2 = st.columns([1, 1])
+    with col1:
+        # QUADRO PRINCIPAL DE BEADS (como na app original)
+        st.markdown('<div class="main-board">', unsafe_allow_html=True)
+        st.markdown('<div class="board-header">🎯 BEADS VERTICAIS</div>', unsafe_allow_html=True)
         
-        with col1:
-            st.subheader("🎯 Registar Beads")
-            
-            # Botões para beads
-            col1a, col1b, col1c = st.columns(3)
-            with col1a:
-                if st.button("🔵 AZUL", use_container_width=True, key="btn_azul"):
-                    app.register_bead('azul')
-            with col1b:
-                if st.button("🔴 VERMELHO", use_container_width=True, key="btn_vermelho"):
-                    app.register_bead('vermelho')
-            with col1c:
-                # CORREÇÃO: Simplificar o registo de empates
-                tie_sum = st.selectbox("Soma para EMPATE:", [2,3,4,5,6,7,8,9,10,11,12], key="tie_select")
-                if st.button("🟡 EMPATE", use_container_width=True, key="btn_empate"):
-                    app.register_bead('empate', tie_sum)
-            
-            # PRÓXIMA PREVISÃO
-            st.subheader("🔮 Próxima Previsão")
-            next_color, confidence = app.get_next_prediction()
-            
-            if next_color:
-                color_name = {"azul": "AZUL", "vermelho": "VERMELHO", "empate": "EMPATE"}
-                color_class = f"prediction-{next_color}"
-                color_emoji = {"azul": "🔵", "vermelho": "🔴", "empate": "🟡"}
-                
-                st.markdown(f"""
-                <div class="prediction-box {color_class}">
-                    <div style="font-size: 24px; margin-bottom: 10px;">{color_emoji[next_color]}</div>
-                    <div>{color_name[next_color]}</div>
-                    <div style="font-size: 14px; margin-top: 5px;">{confidence:.1f}% confiança</div>
-                </div>
-                """, unsafe_allow_html=True)
-            else:
-                st.info("🤖 Treine o modelo ML para obter previsões")
-            
-            # Coluna atual
-            st.subheader("📝 Coluna Atual")
-            if app.state["current_column"]:
-                st.markdown('<div class="column-container">', unsafe_allow_html=True)
-                st.markdown('<div class="column-header">Coluna em Construção</div>', unsafe_allow_html=True)
-                
-                beads_html = '<div class="bead-display">'
-                for bead in app.state["current_column"]:
-                    color_class = f"bead-{bead['color']}"
-                    # CORREÇÃO: Mostrar o valor do empate
-                    if bead['color'] == 'empate':
-                        display_text = str(bead.get('tie_sum', 'E'))
-                    else:
-                        display_text = bead['color'][0].upper()
-                    beads_html += f'<div class="bead {color_class}">{display_text}</div>'
-                beads_html += '</div>'
-                st.markdown(beads_html, unsafe_allow_html=True)
-                
-                st.write(f"**Progresso:** {len(app.state['current_column'])}/6 beads")
-                st.markdown('</div>', unsafe_allow_html=True)
-            else:
-                st.info("Nenhum bead na coluna atual")
+        # Criar grid de colunas
+        all_columns = app.state["beads"] + [app.state["current_column"]] if app.state["current_column"] else app.state["beads"]
         
-        with col2:
-            st.subheader("💰 Fazer Aposta")
+        if all_columns:
+            # Mostrar máximo de 10 colunas
+            display_columns = all_columns[-10:]
             
-            bet_amount = st.number_input("Valor:", value=5.0, min_value=0.1, step=0.5, key="bet_amount")
+            st.markdown('<div class="beads-grid">', unsafe_allow_html=True)
             
-            col2a, col2b, col2c = st.columns(3)
-            with col2a:
-                if st.button("Apostar 🔵", use_container_width=True, key="bet_azul"):
-                    if app.place_bet('azul', bet_amount):
-                        st.success(f"✅ Aposta de {bet_amount} em AZUL!")
-            with col2b:
-                if st.button("Apostar 🔴", use_container_width=True, key="bet_vermelho"):
-                    if app.place_bet('vermelho', bet_amount):
-                        st.success(f"✅ Aposta de {bet_amount} em VERMELHO!")
-            with col2c:
-                if st.button("Apostar 🟡", use_container_width=True, key="bet_empate"):
-                    if app.place_bet('empate', bet_amount):
-                        st.success(f"✅ Aposta de {bet_amount} em EMPATE!")
-            
-            # Apostas ativas
-            st.subheader("📋 Apostas Ativas")
-            if app.state["bets"]:
-                for bet in app.state["bets"]:
-                    emoji = "🔵" if bet['color'] == 'azul' else "🔴" if bet['color'] == 'vermelho' else "🟡"
-                    st.write(f"{emoji} **{bet['color'].upper()}**: {bet['amount']:.1f}x")
-            else:
-                st.info("Nenhuma aposta ativa")
-            
-            # Histórico de colunas - CORREÇÃO COMPLETA
-            st.subheader("📚 Histórico de Colunas")
-            if app.state["beads"]:
-                # Criar grid para as colunas verticais
-                st.markdown('<div class="columns-grid">', unsafe_allow_html=True)
+            for i, column in enumerate(display_columns):
+                is_current = (i == len(display_columns) - 1 and column == app.state["current_column"])
+                column_class = "bead-column current-column" if is_current else "bead-column"
                 
-                # Mostrar TODAS as colunas (ou as últimas 12 para não sobrecarregar)
-                display_columns = app.state["beads"][-12:]  # Últimas 12 colunas
+                st.markdown(f'<div class="{column_class}">', unsafe_allow_html=True)
                 
-                for i, column in enumerate(display_columns):
-                    col_number = len(app.state["beads"]) - len(display_columns) + i + 1
-                    
-                    st.markdown(f'''
-                    <div class="column-vertical">
-                        <div class="column-label">Coluna {col_number}</div>
-                    ''', unsafe_allow_html=True)
-                    
-                    # Adicionar beads verticais - CORREÇÃO: Mostrar valor do empate
-                    for bead in column:
-                        color_class = f"bead-vertical-{bead['color']}"
+                # Adicionar beads vazios para completar 6 posições
+                for row in range(6):
+                    if row < len(column):
+                        bead = column[row]
+                        color_class = f"bead-{bead['color']}"
                         if bead['color'] == 'empate':
                             display_text = str(bead.get('tie_sum', 'E'))
                         else:
                             display_text = bead['color'][0].upper()
-                        st.markdown(f'<div class="bead-vertical {color_class}">{display_text}</div>', unsafe_allow_html=True)
-                    
-                    st.markdown('</div>', unsafe_allow_html=True)
+                        st.markdown(f'<div class="bead {color_class}">{display_text}</div>', unsafe_allow_html=True)
+                    else:
+                        # Bead vazio
+                        st.markdown('<div class="bead" style="background-color: #333; border: 2px dashed #666;"></div>', unsafe_allow_html=True)
+                
+                # Número da coluna
+                col_number = len(app.state["beads"]) + (1 if app.state["current_column"] else 0) - len(display_columns) + i + 1
+                status = " (Atual)" if is_current else ""
+                st.markdown(f'<div class="column-number">Coluna {col_number}{status}</div>', unsafe_allow_html=True)
                 
                 st.markdown('</div>', unsafe_allow_html=True)
-                
-                # Mostrar estatísticas do histórico
-                st.write(f"**Total de colunas completas:** {len(app.state['beads'])}")
-            else:
-                st.info("Nenhuma coluna completa ainda")
-    
-    with tab2:
-        col1, col2 = st.columns([1, 1])
+            
+            st.markdown('</div>', unsafe_allow_html=True)
+            
+            # Estatísticas do quadro
+            current_progress = len(app.state["current_column"])
+            st.write(f"**Progresso da coluna atual:** {current_progress}/6 beads")
+            st.write(f"**Total de colunas:** {len(app.state['beads'])}")
+            
+        else:
+            st.info("Nenhum bead registado ainda. Use os botões abaixo para começar.")
         
-        with col1:
-            st.subheader("💳 Banca & Apostas")
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        # CONTROLES DE BEADS
+        st.markdown('<div class="control-panel">', unsafe_allow_html=True)
+        st.subheader("🎯 Registar Beads")
+        
+        col1a, col1b, col1c = st.columns(3)
+        with col1a:
+            if st.button("🔵 AZUL", use_container_width=True, key="btn_azul"):
+                app.register_bead('azul')
+        with col1b:
+            if st.button("🔴 VERMELHO", use_container_width=True, key="btn_vermelho"):
+                app.register_bead('vermelho')
+        with col1c:
+            tie_sum = st.selectbox("Soma EMPATE:", [2,3,4,5,6,7,8,9,10,11,12], key="tie_select")
+            if st.button("🟡 EMPATE", use_container_width=True, key="btn_empate"):
+                app.register_bead('empate', tie_sum)
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    with col2:
+        # PREVISÃO
+        st.subheader("🔮 Próxima Previsão")
+        next_color, confidence = app.get_next_prediction()
+        
+        if next_color:
+            color_name = {"azul": "AZUL", "vermelho": "VERMELHO", "empate": "EMPATE"}
+            color_class = f"prediction-{next_color}"
+            color_emoji = {"azul": "🔵", "vermelho": "🔴", "empate": "🟡"}
+            
+            st.markdown(f"""
+            <div class="prediction-box {color_class}">
+                <div style="font-size: 24px; margin-bottom: 10px;">{color_emoji[next_color]}</div>
+                <div>{color_name[next_color]}</div>
+                <div style="font-size: 14px; margin-top: 5px;">{confidence:.1f}% confiança</div>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.info("🤖 Treine o modelo ML para obter previsões")
+        
+        # APOSTAS
+        st.markdown('<div class="control-panel">', unsafe_allow_html=True)
+        st.subheader("💰 Fazer Aposta")
+        
+        bet_amount = st.number_input("Valor da aposta:", value=5.0, min_value=0.1, step=0.5, key="bet_amount")
+        
+        col2a, col2b, col2c = st.columns(3)
+        with col2a:
+            if st.button("Apostar 🔵", use_container_width=True, key="bet_azul"):
+                if app.place_bet('azul', bet_amount):
+                    st.success(f"✅ Aposta de {bet_amount} em AZUL!")
+        with col2b:
+            if st.button("Apostar 🔴", use_container_width=True, key="bet_vermelho"):
+                if app.place_bet('vermelho', bet_amount):
+                    st.success(f"✅ Aposta de {bet_amount} em VERMELHO!")
+        with col2c:
+            if st.button("Apostar 🟡", use_container_width=True, key="bet_empate"):
+                if app.place_bet('empate', bet_amount):
+                    st.success(f"✅ Aposta de {bet_amount} em EMPATE!")
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        # APOSTAS ATIVAS
+        st.subheader("📋 Apostas Ativas")
+        if app.state["bets"]:
+            for bet in app.state["bets"]:
+                emoji = "🔵" if bet['color'] == 'azul' else "🔴" if bet['color'] == 'vermelho' else "🟡"
+                st.write(f"{emoji} **{bet['color'].upper()}**: {bet['amount']:.1f}x")
+        else:
+            st.info("Nenhuma aposta ativa")
+        
+        # ESTATÍSTICAS RÁPIDAS
+        st.subheader("📊 Estatísticas")
+        col_stat1, col_stat2 = st.columns(2)
+        with col_stat1:
             st.metric("💰 Banca", f"{app.state['bank']:.1f}x")
+            st.metric("🔵 Azul", app.state['statistics']['azul_count'])
+            st.metric("🔴 Vermelho", app.state['statistics']['vermelho_count'])
+        with col_stat2:
             st.metric("📈 Lucro", f"{app.state['statistics']['profit']:+.1f}x")
-            
-            col1a, col1b, col1c = st.columns(3)
-            with col1a:
-                st.metric("🎯 Total", app.state['statistics']['bets_count'])
-            with col1b:
-                st.metric("✅ Ganhas", app.state['statistics']['bets_won'])
-            with col1c:
-                st.metric("❌ Perdidas", app.state['statistics']['bets_lost'])
-            
-            if app.state['statistics']['bets_count'] > 0:
-                win_rate = (app.state['statistics']['bets_won'] / app.state['statistics']['bets_count']) * 100
-                st.metric("📊 Taxa Vitória", f"{win_rate:.1f}%")
-        
-        with col2:
-            st.subheader("🎰 Beads & ML")
-            col2a, col2b, col2c = st.columns(3)
-            with col2a:
-                st.metric("🔵 Azul", app.state['statistics']['azul_count'])
-            with col2b:
-                st.metric("🔴 Vermelho", app.state['statistics']['vermelho_count'])
-            with col2c:
-                st.metric("🟡 Empate", app.state['statistics']['empate_count'])
-            
-            st.metric("📊 Total Beads", app.state['statistics']['total_beads'])
-            st.metric("🔴 Seq Vermelho", app.state['statistics']['seq_vermelho'])
-            st.metric("🟡 Seq Empate", app.state['statistics']['seq_empate'])
-            
-            if app.state["ml_model"]["trained"]:
-                st.subheader("🤖 Previsões")
-                pred = app.state["ml_model"]["predictions"]
-                col_pred1, col_pred2, col_pred3 = st.columns(3)
-                with col_pred1:
-                    st.metric("🔵 Azul", f"{pred['azul']:.1f}%")
-                with col_pred2:
-                    st.metric("🔴 Vermelho", f"{pred['vermelho']:.1f}%")
-                with col_pred3:
-                    st.metric("🟡 Empate", f"{pred['empate']:.1f}%")
+            st.metric("🟡 Empate", app.state['statistics']['empate_count'])
+            st.metric("🎯 Total", app.state['statistics']['total_beads'])
+
+    # BOTÕES DE GESTÃO
+    st.markdown("---")
+    st.subheader("⚙️ Gestão")
     
-    with tab3:
-        col1, col2 = st.columns([1, 1])
-        
-        with col1:
-            st.subheader("🤖 Machine Learning")
-            
-            if st.button("🎯 Treinar Modelo", use_container_width=True, key="train_ml"):
-                if app.train_model():
-                    st.success("✅ Modelo treinado!")
-            
-            if app.state["ml_model"]["trained"]:
-                st.info(f"**Modelo:** {app.state['ml_model']['model_type']}")
-                st.metric("🎯 Precisão", f"{app.state['ml_model']['accuracy']:.1f}%")
-            
-            st.subheader("⚙️ Configurações")
-            auto_train = st.checkbox("Auto-treino", value=app.state["settings"]["auto_train"], key="auto_train")
-            train_interval = st.number_input("Intervalo treino", 
-                                           value=app.state["settings"]["train_interval"],
-                                           min_value=1, max_value=20, key="train_interval")
-            
-            if st.button("💾 Guardar Config", use_container_width=True, key="save_config"):
-                app.state["settings"]["auto_train"] = auto_train
-                app.state["settings"]["train_interval"] = train_interval
-                app.save_state()
-                st.success("✅ Configurações guardadas!")
-        
-        with col2:
-            st.subheader("🗑️ Gestão de Dados")
-            
-            if st.button("🔄 Reset Beads", use_container_width=True, key="reset_beads"):
-                app.reset_beads()
-                st.success("✅ Beads resetados!")
-            
-            if st.button("💰 Reset Apostas", use_container_width=True, key="reset_bets"):
-                app.reset_bets()
-                st.success("✅ Apostas resetadas!")
-            
-            if st.button("💥 Reset Tudo", use_container_width=True, key="reset_all"):
-                app.reset_all()
-                st.success("✅ Reset completo!")
-            
-            st.subheader("📊 Informação")
-            st.write(f"**Beads totais:** {app.state['statistics']['total_beads']}")
-            st.write(f"**Colunas:** {len(app.state['beads'])}")
-            st.write(f"**Apostas históricas:** {len(app.state['bet_history'])}")
+    col_manage1, col_manage2, col_manage3, col_manage4 = st.columns(4)
+    
+    with col_manage1:
+        if st.button("🎯 Treinar Modelo", use_container_width=True):
+            if app.train_model():
+                st.success("✅ Modelo treinado!")
+    
+    with col_manage2:
+        if st.button("🔄 Reset Beads", use_container_width=True):
+            app.reset_beads()
+            st.success("✅ Beads resetados!")
+    
+    with col_manage3:
+        if st.button("💰 Reset Apostas", use_container_width=True):
+            app.reset_bets()
+            st.success("✅ Apostas resetadas!")
+    
+    with col_manage4:
+        if st.button("💥 Reset Tudo", use_container_width=True):
+            app.reset_all()
+            st.success("✅ Reset completo!")
 
 if __name__ == "__main__":
     main()
