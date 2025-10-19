@@ -546,7 +546,7 @@ class BBDeepMobile:
             models = ["RandomForest", "SVM", "LSTM"]
             results = {}
             win_rates = {}  # Usar win rate histórico
-            rf_bias = 5.0  # Bias pro RF
+            rf_bias = 10.0  # Bias maior pro RF pra voltar mais fácil
             best_model = "RandomForest"
             best_score = -1
             
