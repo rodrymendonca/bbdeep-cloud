@@ -27,7 +27,6 @@ class DataManager:
                 json.dump(data, f, indent=2, ensure_ascii=False)
             return True
         except Exception as e:
-            st.error(f"Erro ao guardar: {e}")
             return False
     
     def load_data(self, filename):
@@ -38,7 +37,6 @@ class DataManager:
                     return json.load(f)
             return None
         except Exception as e:
-            st.error(f"Erro ao carregar: {e}")
             return None
 
 # ===== ML ENGINE =====
@@ -46,7 +44,6 @@ class MLEngine:
     def __init__(self):
         self.model_trained = False
         self.predictions = {"azul": 44.5, "vermelho": 44.5, "empate": 11.0}
-        self.debug_mode = False
 
     def train_model(self, beads_data, statistics):
         total_beads = statistics.get("total_beads", 0)
@@ -56,7 +53,7 @@ class MLEngine:
             vermelho_count = statistics.get("vermelho_count", 0)
             empate_count = statistics.get("empate_count", 0)
             
-            # Probabilidades baseadas no histórico
+            # Probabilidades base
             azul_prob = (azul_count / total_beads) * 100
             vermelho_prob = (vermelho_count / total_beads) * 100
             empate_prob = (empate_count / total_beads) * 100
@@ -65,7 +62,6 @@ class MLEngine:
             seq_vermelho = statistics.get("seq_vermelho", 0)
             seq_empate = statistics.get("seq_empate", 0)
             
-            # Fator de correção para sequências longas
             if seq_vermelho >= 3:
                 azul_prob += seq_vermelho * 5
                 empate_prob += seq_vermelho * 2
@@ -79,17 +75,17 @@ class MLEngine:
                 "empate": max(1, min(30, empate_prob))
             }
             
-            # Normalizar para 100%
+            # Normalizar
             total = sum(predictions.values())
             predictions = {k: (v / total) * 100 for k, v in predictions.items()}
             
-            accuracy = 60 + min(30, total_beads / 10)  # Accuracy melhora com mais dados
+            accuracy = 60 + min(30, total_beads / 10)
             
             return {
                 "success": True,
                 "accuracy": accuracy,
                 "predictions": predictions,
-                "model_type": "Heurístico Avançado",
+                "model_type": "Heurístico",
                 "training_examples": total_beads
             }
         else:
@@ -97,7 +93,7 @@ class MLEngine:
                 "success": True,
                 "accuracy": 50.0,
                 "predictions": {"azul": 44.5, "vermelho": 44.5, "empate": 11.0},
-                "model_type": "Heurístico Básico",
+                "model_type": "Básico",
                 "training_examples": 0
             }
     
@@ -110,21 +106,19 @@ class BBDeepMobile:
         self.data_manager = DataManager()
         self.ml_engine = MLEngine()
         
-        # Configurações
         self.ODDS = {'azul': 2.0, 'vermelho': 2.0, 'empate': 5.0}
         self.TIE_PAYOUTS = {2: 88, 12: 88, 3: 25, 11: 25, 4: 10, 10: 10, 5: 6, 9: 6, 6: 4, 7: 4, 8: 4}
         
-        # Inicializar estado
-        if 'app_state' not in st.session_state:
+        # Inicializar estado apenas uma vez
+        if 'app_initialized' not in st.session_state:
             self.load_initial_state()
-        
-        self.state = st.session_state.app_state
-    
+            st.session_state.app_initialized = True
+
     def load_initial_state(self):
         default_state = {
-            "beads": [],           # Histórico de colunas COMPLETAS
-            "current_column": [],  # Coluna atual em construção
-            "last_color": None,    # Última cor registada
+            "beads": [],
+            "current_column": [],
+            "last_color": None,
             "bank": 100.0,
             "bets": [],
             "bet_history": [],
@@ -146,15 +140,13 @@ class BBDeepMobile:
             }
         }
         
-        # Carregar estado guardado
         loaded = self.data_manager.load_data("app_state.json")
         if loaded:
             st.session_state.app_state = self.ensure_state_compatibility(loaded)
         else:
             st.session_state.app_state = default_state
-    
+
     def ensure_state_compatibility(self, loaded_state):
-        # Garantir que todas as chaves necessárias existem
         default_stats = {
             "azul_count": 0, "vermelho_count": 0, "empate_count": 0,
             "total_beads": 0, "bets_count": 0, "bets_won": 0, "bets_lost": 0,
@@ -169,50 +161,29 @@ class BBDeepMobile:
                 if key not in loaded_state["statistics"]:
                     loaded_state["statistics"][key] = default_stats[key]
         
-        # Garantir outras estruturas
         for key in ["beads", "current_column", "bets", "bet_history"]:
             if key not in loaded_state:
                 loaded_state[key] = []
         
-        if "last_color" not in loaded_state:
-            loaded_state["last_color"] = None
-        
-        if "bank" not in loaded_state:
-            loaded_state["bank"] = 100.0
-        
-        if "ml_model" not in loaded_state:
-            loaded_state["ml_model"] = {
-                "trained": False, "accuracy": 0,
-                "predictions": {"azul": 44.5, "vermelho": 44.5, "empate": 11.0},
-                "last_trained": None, "training_count": 0,
-                "model_type": "Nenhum", "training_examples": 0,
-                "active_model": "Nenhum"
-            }
-        
-        if "settings" not in loaded_state:
-            loaded_state["settings"] = {"auto_train": True, "train_interval": 5}
-        
         return loaded_state
+
+    @property
+    def state(self):
+        return st.session_state.app_state
 
     def register_bead(self, color, tie_sum=None):
         bead = {"color": color}
         if color == "empate" and tie_sum:
             bead["tie_sum"] = tie_sum
         
-        # **LÓGICA CORRIGIDA PARA COLUNAS**
         current_col = self.state["current_column"]
         
-        # Se não há coluna atual OU a cor mudou OU a coluna tem 6 beads → nova coluna
         if not current_col or current_col[-1]["color"] != color or len(current_col) >= 6:
-            # Se havia uma coluna em andamento, guarda no histórico
             if current_col:
                 self.state["beads"].append(current_col.copy())
-                self.state["current_column"] = []  # Reset para nova coluna
-            
-            # Inicia nova coluna com o bead atual
+                self.state["current_column"] = []
             self.state["current_column"] = [bead]
         else:
-            # Mesma cor e coluna com menos de 6 beads → adiciona à coluna atual
             self.state["current_column"].append(bead)
         
         self.state["last_color"] = color
@@ -242,7 +213,6 @@ class BBDeepMobile:
 
     def place_bet(self, color, amount):
         if amount <= 0 or amount > self.state["bank"]:
-            st.error("Valor de aposta inválido")
             return False
         
         bet = {
@@ -262,15 +232,11 @@ class BBDeepMobile:
         color = bead["color"]
         tie_sum = bead.get("tie_sum")
         
-        bets_to_resolve = self.state["bets"].copy()
-        self.state["bets"] = []
-        
-        for bet in bets_to_resolve:
+        for bet in list(self.state["bets"]):
             self.state["statistics"]["bets_count"] += 1
             self.state["statistics"]["total_wagered"] += bet["amount"]
             
             if bet["color"] == color:
-                # Aposta ganhou
                 if color != "empate":
                     payout = bet["amount"] * self.ODDS[color]
                 else:
@@ -291,12 +257,10 @@ class BBDeepMobile:
                 bet["payout"] = payout
                 
             elif color == "empate" and bet["color"] in ["azul", "vermelho"]:
-                # Empate - devolve aposta
                 self.state["bank"] += bet["amount"]
                 bet["outcome"] = "push"
                 bet["payout"] = bet["amount"]
             else:
-                # Aposta perdeu
                 self.state["statistics"]["bets_lost"] += 1
                 self.state["statistics"]["profit"] -= bet["amount"]
                 bet["outcome"] = "lost"
@@ -305,7 +269,7 @@ class BBDeepMobile:
             bet["resolved_at"] = datetime.now().isoformat()
             self.state["bet_history"].append(bet)
         
-        self.save_state()
+        self.state["bets"] = []
 
     def train_model(self, auto=False):
         result = self.ml_engine.train_model(self.state, self.state["statistics"])
@@ -325,7 +289,6 @@ class BBDeepMobile:
         return False
 
     def get_next_prediction(self):
-        """Obter a próxima previsão com base no modelo ML"""
         if not self.state["ml_model"]["trained"]:
             return None, 0
         
@@ -333,7 +296,6 @@ class BBDeepMobile:
         if not predictions:
             return None, 0
         
-        # Encontrar a cor com maior probabilidade
         max_color = max(predictions, key=predictions.get)
         confidence = predictions[max_color]
         
@@ -353,7 +315,6 @@ class BBDeepMobile:
         self.save_state()
 
     def reset_bets(self):
-        # Devolver apostas ativas à banca
         for bet in self.state["bets"]:
             self.state["bank"] += bet["amount"]
         
@@ -397,85 +358,30 @@ def main():
         initial_sidebar_state="collapsed"
     )
     
-    # CSS para mobile
+    # CSS
     st.markdown("""
     <style>
-    @media (max-width: 768px) {
-        .main > div {
-            padding: 0.5rem;
-        }
-        .stButton button {
-            width: 100%;
-            margin: 2px 0;
-            font-size: 14px;
-        }
-    }
-    
-    /* Estilos para as beads */
-    .bead-display {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 5px;
-        margin: 10px 0;
-    }
-    .bead {
-        width: 35px;
-        height: 35px;
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-weight: bold;
-        color: white;
-        border: 2px solid white;
-        font-size: 16px;
-    }
+    .bead-display { display: flex; gap: 5px; margin: 10px 0; }
+    .bead { width: 35px; height: 35px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; color: white; border: 2px solid white; font-size: 16px; }
     .bead-azul { background-color: #2196f3; }
     .bead-vermelho { background-color: #f44336; }
     .bead-empate { background-color: #ffc107; color: black; }
-    
-    /* Estilos para colunas */
-    .column-container {
-        border: 2px solid #444;
-        border-radius: 8px;
-        padding: 10px;
-        margin: 8px 0;
-        background-color: #1a1a1a;
-    }
-    .column-header {
-        font-weight: bold;
-        margin-bottom: 8px;
-        color: #fff;
-    }
-    
-    /* Previsão próxima */
-    .prediction-box {
-        border: 3px solid;
-        border-radius: 10px;
-        padding: 15px;
-        text-align: center;
-        margin: 10px 0;
-        font-weight: bold;
-        font-size: 18px;
-    }
+    .column-container { border: 2px solid #444; border-radius: 8px; padding: 10px; margin: 8px 0; background-color: #1a1a1a; }
+    .column-header { font-weight: bold; margin-bottom: 8px; color: #fff; }
+    .prediction-box { border: 3px solid; border-radius: 10px; padding: 15px; text-align: center; margin: 10px 0; font-weight: bold; font-size: 18px; }
     .prediction-azul { border-color: #2196f3; background-color: rgba(33, 150, 243, 0.1); }
     .prediction-vermelho { border-color: #f44336; background-color: rgba(244, 67, 54, 0.1); }
     .prediction-empate { border-color: #ffc107; background-color: rgba(255, 193, 7, 0.1); }
-    
-    /* Grid para colunas históricas */
-    .columns-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-        gap: 10px;
-        margin: 15px 0;
-    }
     </style>
     """, unsafe_allow_html=True)
     
     st.title("🎰 BB DEEP - Mobile")
     
-    # Inicializar app
-    app = BBDeepMobile()
+    # Inicializar app UMA VEZ
+    if 'app' not in st.session_state:
+        st.session_state.app = BBDeepMobile()
+    
+    app = st.session_state.app
     
     # Layout principal
     tab1, tab2, tab3 = st.tabs(["🎯 Beads & Apostas", "📊 Estatísticas", "⚙️ Configurações"])
@@ -486,22 +392,19 @@ def main():
         with col1:
             st.subheader("🎯 Registar Beads")
             
-            # Botões para beads
+            # Botões para beads - SEM rerun automático
             col1a, col1b, col1c = st.columns(3)
             with col1a:
                 if st.button("🔵 AZUL", use_container_width=True, key="btn_azul"):
                     app.register_bead('azul')
-                    st.rerun()
             with col1b:
                 if st.button("🔴 VERMELHO", use_container_width=True, key="btn_vermelho"):
                     app.register_bead('vermelho')
-                    st.rerun()
             with col1c:
                 if st.button("🟡 EMPATE", use_container_width=True, key="btn_empate"):
-                    tie_sum = st.selectbox("Soma do empate:", [2,3,4,5,6,7,8,9,10,11,12], key="tie_select")
-                    if st.button("✅ CONFIRMAR EMPATE", use_container_width=True, key="confirm_empate"):
+                    tie_sum = st.selectbox("Soma:", [2,3,4,5,6,7,8,9,10,11,12], key="tie_select")
+                    if st.button("✅ CONFIRMAR", use_container_width=True, key="confirm_empate"):
                         app.register_bead('empate', tie_sum)
-                        st.rerun()
             
             # PRÓXIMA PREVISÃO
             st.subheader("🔮 Próxima Previsão")
@@ -522,7 +425,7 @@ def main():
             else:
                 st.info("🤖 Treine o modelo ML para obter previsões")
             
-            # Display da coluna atual
+            # Coluna atual
             st.subheader("📝 Coluna Atual")
             if app.state["current_column"]:
                 st.markdown('<div class="column-container">', unsafe_allow_html=True)
@@ -544,24 +447,21 @@ def main():
         with col2:
             st.subheader("💰 Fazer Aposta")
             
-            bet_amount = st.number_input("Valor da aposta:", value=5.0, min_value=0.1, step=0.5, key="bet_amount")
+            bet_amount = st.number_input("Valor:", value=5.0, min_value=0.1, step=0.5, key="bet_amount")
             
             col2a, col2b, col2c = st.columns(3)
             with col2a:
                 if st.button("Apostar 🔵", use_container_width=True, key="bet_azul"):
                     if app.place_bet('azul', bet_amount):
-                        st.success(f"✅ Aposta de {bet_amount} em AZUL colocada!")
-                        st.rerun()
+                        st.success(f"✅ Aposta de {bet_amount} em AZUL!")
             with col2b:
                 if st.button("Apostar 🔴", use_container_width=True, key="bet_vermelho"):
                     if app.place_bet('vermelho', bet_amount):
-                        st.success(f"✅ Aposta de {bet_amount} em VERMELHO colocada!")
-                        st.rerun()
+                        st.success(f"✅ Aposta de {bet_amount} em VERMELHO!")
             with col2c:
                 if st.button("Apostar 🟡", use_container_width=True, key="bet_empate"):
                     if app.place_bet('empate', bet_amount):
-                        st.success(f"✅ Aposta de {bet_amount} em EMPATE colocada!")
-                        st.rerun()
+                        st.success(f"✅ Aposta de {bet_amount} em EMPATE!")
             
             # Apostas ativas
             st.subheader("📋 Apostas Ativas")
@@ -572,13 +472,11 @@ def main():
             else:
                 st.info("Nenhuma aposta ativa")
             
-            # HISTÓRICO DE COLUNAS (VERTICAL como na app original)
+            # Histórico de colunas
             st.subheader("📚 Histórico de Colunas")
             if app.state["beads"]:
-                # Mostrar colunas da mais recente para a mais antiga
                 for i, column in enumerate(reversed(app.state["beads"])):
-                    if i >= 8:  # Limitar a 8 colunas no display
-                        break
+                    if i >= 6: break
                     
                     st.markdown('<div class="column-container">', unsafe_allow_html=True)
                     st.markdown(f'<div class="column-header">Coluna {len(app.state["beads"]) - i}</div>', unsafe_allow_html=True)
@@ -592,7 +490,7 @@ def main():
                     st.markdown(beads_html, unsafe_allow_html=True)
                     st.markdown('</div>', unsafe_allow_html=True)
             else:
-                st.info("Nenhuma coluna completa no histórico")
+                st.info("Nenhuma coluna completa")
     
     with tab2:
         col1, col2 = st.columns([1, 1])
@@ -628,9 +526,8 @@ def main():
             st.metric("🔴 Seq Vermelho", app.state['statistics']['seq_vermelho'])
             st.metric("🟡 Seq Empate", app.state['statistics']['seq_empate'])
             
-            # Previsões ML detalhadas
             if app.state["ml_model"]["trained"]:
-                st.subheader("🤖 Previsões Detalhadas")
+                st.subheader("🤖 Previsões")
                 pred = app.state["ml_model"]["predictions"]
                 col_pred1, col_pred2, col_pred3 = st.columns(3)
                 with col_pred1:
@@ -639,8 +536,6 @@ def main():
                     st.metric("🔴 Vermelho", f"{pred['vermelho']:.1f}%")
                 with col_pred3:
                     st.metric("🟡 Empate", f"{pred['empate']:.1f}%")
-                
-                st.metric("🎯 Precisão do Modelo", f"{app.state['ml_model']['accuracy']:.1f}%")
     
     with tab3:
         col1, col2 = st.columns([1, 1])
@@ -650,23 +545,19 @@ def main():
             
             if st.button("🎯 Treinar Modelo", use_container_width=True, key="train_ml"):
                 if app.train_model():
-                    st.success("✅ Modelo treinado com sucesso!")
-                else:
-                    st.error("❌ Erro ao treinar modelo")
-                st.rerun()
+                    st.success("✅ Modelo treinado!")
             
             if app.state["ml_model"]["trained"]:
-                st.info(f"**Modelo Ativo:** {app.state['ml_model']['model_type']}")
+                st.info(f"**Modelo:** {app.state['ml_model']['model_type']}")
                 st.metric("🎯 Precisão", f"{app.state['ml_model']['accuracy']:.1f}%")
-                st.metric("🔄 Treinos Realizados", app.state['ml_model']['training_count'])
             
             st.subheader("⚙️ Configurações")
             auto_train = st.checkbox("Auto-treino", value=app.state["settings"]["auto_train"], key="auto_train")
-            train_interval = st.number_input("Intervalo de treino (beads)", 
+            train_interval = st.number_input("Intervalo treino", 
                                            value=app.state["settings"]["train_interval"],
                                            min_value=1, max_value=20, key="train_interval")
             
-            if st.button("💾 Guardar Configurações", use_container_width=True, key="save_config"):
+            if st.button("💾 Guardar Config", use_container_width=True, key="save_config"):
                 app.state["settings"]["auto_train"] = auto_train
                 app.state["settings"]["train_interval"] = train_interval
                 app.save_state()
@@ -678,23 +569,19 @@ def main():
             if st.button("🔄 Reset Beads", use_container_width=True, key="reset_beads"):
                 app.reset_beads()
                 st.success("✅ Beads resetados!")
-                st.rerun()
             
             if st.button("💰 Reset Apostas", use_container_width=True, key="reset_bets"):
                 app.reset_bets()
                 st.success("✅ Apostas resetadas!")
-                st.rerun()
             
-            if st.button("💥 Reset Completo", use_container_width=True, key="reset_all"):
+            if st.button("💥 Reset Tudo", use_container_width=True, key="reset_all"):
                 app.reset_all()
-                st.success("✅ Reset completo realizado!")
-                st.rerun()
+                st.success("✅ Reset completo!")
             
-            st.subheader("📊 Informação do Sistema")
-            st.write(f"**🎯 Total de Beads:** {app.state['statistics']['total_beads']}")
-            st.write(f"**📚 Colunas Completas:** {len(app.state['beads'])}")
-            st.write(f"**📋 Apostas Históricas:** {len(app.state['bet_history'])}")
-            st.write(f"**💾 Estado:** {'Carregado' if app.data_manager.load_data('app_state.json') else 'Novo'}")
+            st.subheader("📊 Informação")
+            st.write(f"**Beads totais:** {app.state['statistics']['total_beads']}")
+            st.write(f"**Colunas:** {len(app.state['beads'])}")
+            st.write(f"**Apostas históricas:** {len(app.state['bet_history'])}")
 
 if __name__ == "__main__":
     main()
