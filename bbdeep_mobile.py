@@ -230,6 +230,8 @@ class MLEngine:
                     for batch_X, batch_y in train_loader:
                         self.optimizer.zero_grad()
                         outputs = self.ml_model(batch_X)
+                        outputs = outputs.view(-1, 3)  # Ajuste shape se necessário
+                        batch_y = batch_y.view(-1)
                         loss = self.criterion(outputs, batch_y)
                         loss.backward()
                         self.optimizer.step()
@@ -415,7 +417,8 @@ class BBDeepMobile:
             },
             "settings": {
                 "auto_train": True, "train_interval": 1,
-                "ml_model_type": "RandomForest"  # Novo: default RF
+                "ml_model_type": "RandomForest",  # Novo: default RF
+                "auto_switch": False  # Novo: auto-switch off por default
             }
         }
         
@@ -452,6 +455,8 @@ class BBDeepMobile:
             loaded_state["settings"] = {}
         if "ml_model_type" not in loaded_state["settings"]:
             loaded_state["settings"]["ml_model_type"] = "RandomForest"
+        if "auto_switch" not in loaded_state["settings"]:
+            loaded_state["settings"]["auto_switch"] = False
         
         return loaded_state
 
@@ -536,7 +541,37 @@ class BBDeepMobile:
         self.save_state()
 
     def train_model(self, auto=False):
-        result = self.ml_engine.train_model(self.state, self.state["statistics"])
+        if self.state["settings"]["auto_switch"]:
+            # Modo auto-switch: treina todos e escolhe o melhor, bias pro RF
+            models = ["RandomForest", "SVM", "LSTM"]
+            results = {}
+            win_rates = {}  # Usar win rate histórico
+            rf_bias = 5.0  # Bias pro RF
+            best_model = "RandomForest"
+            best_score = -1
+            
+            for m in models:
+                engine = MLEngine(m)
+                result = engine.train_model(self.state, self.state["statistics"])
+                if result["success"]:
+                    results[m] = result
+                    # Win rate histórico + accuracy como score
+                    wr = (self.state["ml_model"]["hits"] / self.state["ml_model"]["total_predictions"] * 100) if self.state["ml_model"]["total_predictions"] > 0 else 50
+                    score = wr + result["accuracy"]
+                    if m == "RandomForest":
+                        score += rf_bias
+                    win_rates[m] = score
+                    if score > best_score:
+                        best_score = score
+                        best_model = m
+            
+            # Atualiza com o melhor
+            result = results[best_model]
+            self.ml_engine = MLEngine(best_model)
+            self.state["settings"]["ml_model_type"] = best_model
+        else:
+            result = self.ml_engine.train_model(self.state, self.state["statistics"])
+        
         if result["success"]:
             self.state["ml_model"].update({
                 "trained": True,
@@ -861,11 +896,13 @@ def main():
         auto_train = st.checkbox("Auto-treino", value=app.state["settings"]["auto_train"], key="auto_train")
         train_interval = st.slider("Intervalo:", 1, 20, app.state["settings"]["train_interval"], key="train_interval")
         ml_model_type = st.selectbox("Tipo de Modelo ML", ["RandomForest", "SVM", "LSTM"], index=["RandomForest", "SVM", "LSTM"].index(app.state["settings"]["ml_model_type"]), key="ml_model_type")
+        auto_switch = st.checkbox("Auto-Switch (alterna se errar muito, prioriza RF)", value=app.state["settings"]["auto_switch"], key="auto_switch")
         
         if st.button("💾 Aplicar", key="save_config"):
             app.state["settings"]["auto_train"] = auto_train
             app.state["settings"]["train_interval"] = train_interval
             app.state["settings"]["ml_model_type"] = ml_model_type
+            app.state["settings"]["auto_switch"] = auto_switch
             app.ml_engine = MLEngine(ml_model_type)  # Reinicializa engine com novo tipo
             app.save_state()
             st.rerun()
