@@ -215,10 +215,8 @@ class BBDeepMobile:
     def state(self):
         return st.session_state.app_state
 
-    def register_bead(self, color, tie_sum=None):
+    def register_bead(self, color):
         bead = {"color": color}
-        if color == "empate" and tie_sum:
-            bead["tie_sum"] = tie_sum
         
         current_col = self.state["current_column"]
         
@@ -466,7 +464,12 @@ def main():
     else:
         st.info("📊 Registe beads e treine o modelo")
     
-    # SEÇÃO 2: BOTÕES DE REGISTO (COMPACTOS)
+    # SEÇÃO 2: BOTÃO DE TREINO (AGORA AQUI - ENTRE PREVISÃO E REGISTOS)
+    if st.button("🎯 TREINAR MODELO", use_container_width=True, key="train_ml_main"):
+        if app.train_model():
+            st.rerun()
+    
+    # SEÇÃO 3: BOTÕES DE REGISTO (COMPACTOS)
     st.markdown("**Registar:**")
     btn_col1, btn_col2, btn_col3 = st.columns(3)
     
@@ -481,15 +484,12 @@ def main():
             st.rerun()
     
     with btn_col3:
-        if st.button("🟡 EMP.", use_container_width=True, key="btn_empate"):
-            # Para empate, mostrar seleção inline
-            with st.popover("Soma:"):
-                tie_sum = st.selectbox("Escolha soma:", [2,3,4,5,6,7,8,9,10,11,12], key="tie_select")
-                if st.button("✅ Confirmar", key="confirm_empate"):
-                    app.register_bead('empate', tie_sum)
-                    st.rerun()
+        # BOTÃO SIMPLES PARA EMPATE - SEM SELEÇÃO DE VALOR
+        if st.button("🟡 EMPATE", use_container_width=True, key="btn_empate"):
+            app.register_bead('empate')
+            st.rerun()
     
-    # SEÇÃO 3: ESTATÍSTICAS ULTRA COMPACTAS
+    # SEÇÃO 4: ESTATÍSTICAS ULTRA COMPACTAS
     st.markdown("---")
     
     # Primeira linha de stats
@@ -511,7 +511,7 @@ def main():
     with col6:
         st.metric("🟡 Seq", app.state['statistics']['seq_empate'], delta=None)
     
-    # SEÇÃO 4: PROBABILIDADES COMPACTAS
+    # SEÇÃO 5: PROBABILIDADES COMPACTAS
     if app.state["ml_model"]["trained"]:
         st.markdown("---")
         st.markdown("**Probabilidades:**")
@@ -530,20 +530,13 @@ def main():
             st.markdown(f"🟡 {pred['empate']:.1f}%")
             st.progress(pred['empate']/100)
     
-    # SEÇÃO 5: CONTROLES COMPACTOS
+    # SEÇÃO 6: CONTROLES COMPACTOS
     st.markdown("---")
     
-    # Botões de ação em linha
-    action_col1, action_col2 = st.columns(2)
-    with action_col1:
-        if st.button("🎯 TREINAR", use_container_width=True, key="train_ml"):
-            if app.train_model():
-                st.rerun()
-    
-    with action_col2:
-        if st.button("🔄 RESETAR", use_container_width=True, key="reset_model"):
-            app.reset_model()
-            st.rerun()
+    # Botões de ação em linha (agora só reset)
+    if st.button("🔄 RESETAR MODELO", use_container_width=True, key="reset_model"):
+        app.reset_model()
+        st.rerun()
     
     # Configurações em popover para economizar espaço
     with st.popover("⚙️ Configurações", use_container_width=True):
@@ -567,17 +560,17 @@ def main():
             last_beads = ""
             for bead in app.state['current_column'][-3:]:
                 symbol = bead['color'][0].upper()
-                if bead['color'] == 'empate':
-                    symbol += str(bead.get('tie_sum', ''))
                 last_beads += symbol + " "
             st.write(last_beads)
     
-    # Estado atual muito compacto
-    if app.state['current_column']:
-        current_progress = len(app.state['current_column'])
-        st.caption(f"📝 Coluna atual: {current_progress}/6 beads")
+    # REMOVIDO: Estado atual da coluna
+    # ANTES: st.caption(f"📝 Coluna atual: {current_progress}/6 beads")
     
     st.markdown('</div>', unsafe_allow_html=True)
+    
+    # NOVO: Mensagem no final
+    st.markdown("---")
+    st.markdown("<div style='text-align: center; color: #666; font-size: 14px;'>feito com ❤️</div>", unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
