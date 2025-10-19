@@ -500,8 +500,8 @@ class BBDeepMobile:
             self.state["statistics"]["seq_empate"] = 0
         else:
             self.state["statistics"]["empate_count"] += 1
-            self.state["statistics"]["seq_empate"] += 1
-            self.state["statistics"]["seq_vermelho"] = 0
+            self.state["seq_empate"] += 1
+            self.state["seq_vermelho"] = 0
         
         # Atualizar win rate se havia previsão
         if current_prediction:
@@ -803,26 +803,7 @@ def main():
             app.register_bead('empate')
             st.rerun()
     
-    # ESTATÍSTICAS
-    st.markdown("---")
-    
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("🔵 Azul", app.state['statistics']['azul_count'], delta=None)
-    with col2:
-        st.metric("🔴 Verm.", app.state['statistics']['vermelho_count'], delta=None)
-    with col3:
-        st.metric("🟡 Emp.", app.state['statistics']['empate_count'], delta=None)
-    
-    col4, col5, col6 = st.columns(3)
-    with col4:
-        st.metric("📊 Total", app.state['statistics']['total_beads'], delta=None)
-    with col5:
-        st.metric("🔴 Seq", app.state['statistics']['seq_vermelho'], delta=None)
-    with col6:
-        st.metric("🟡 Seq", app.state['statistics']['seq_empate'], delta=None)
-    
-    # VISUALIZAÇÃO DO BEAD ROAD
+    # VISUALIZAÇÃO DO BEAD ROAD (movido para aqui, abaixo dos registos)
     st.markdown("**Bead Road:**")
     beads = app.state["beads"]
     current_column = app.state["current_column"]
@@ -861,6 +842,25 @@ def main():
         st.markdown(html, unsafe_allow_html=True)
     else:
         st.caption("Sem beads registados ainda.")
+    
+    # ESTATÍSTICAS (agora abaixo do bead road)
+    st.markdown("---")
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("🔵 Azul", app.state['statistics']['azul_count'], delta=None)
+    with col2:
+        st.metric("🔴 Verm.", app.state['statistics']['vermelho_count'], delta=None)
+    with col3:
+        st.metric("🟡 Emp.", app.state['statistics']['empate_count'], delta=None)
+    
+    col4, col5, col6 = st.columns(3)
+    with col4:
+        st.metric("📊 Total", app.state['statistics']['total_beads'], delta=None)
+    with col5:
+        st.metric("🔴 Seq", app.state['statistics']['seq_vermelho'], delta=None)
+    with col6:
+        st.metric("🟡 Seq", app.state['statistics']['seq_empate'], delta=None)
     
     # INDICADOR GALE
     if gale_count > 0:
