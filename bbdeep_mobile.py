@@ -387,14 +387,25 @@ class MLEngine:
 class BBDeepMobile:
     def __init__(self):
         self.data_manager = DataManager()
-        self.ml_engine = None  # Inicializado no load
+        self.ml_engines = {}  # Dicionário para manter todos os motores
+        self.current_engine_type = "RandomForest"
         
         # Inicializar estado apenas uma vez
         if 'app_initialized' not in st.session_state:
             self.load_initial_state()
             st.session_state.app_initialized = True
-        self.ml_engine = MLEngine(self.state["settings"].get("ml_model_type", "RandomForest"))
-
+        
+        # Inicializar todos os motores
+        self._init_all_engines()
+    
+    def _init_all_engines(self):
+        model_types = ["RandomForest", "SVM", "LSTM"]
+        for model_type in model_types:
+            self.ml_engines[model_type] = MLEngine(model_type)
+        
+        # Definir motor atual
+        self.current_engine_type = self.state["settings"].get("current_model", "RandomForest")
+    
     def load_initial_state(self):
         default_state = {
             "beads": [],
@@ -412,13 +423,15 @@ class BBDeepMobile:
                 "last_trained": None, "training_count": 0,
                 "model_type": "Nenhum", "training_examples": 0,
                 "active_model": "Nenhum",
-                "hits": 0,  # Novo para win rate
-                "total_predictions": 0  # Novo para win rate
+                "hits": 0,
+                "total_predictions": 0,
+                "model_performance": {"RandomForest": 50, "SVM": 50, "LSTM": 50}
             },
             "settings": {
                 "auto_train": True, "train_interval": 1,
-                "ml_model_type": "RandomForest",  # Novo: default RF
-                "auto_switch": False  # Novo: auto-switch off por default
+                "current_model": "RandomForest",
+                "auto_switch": True,
+                "rotation_interval": 10
             }
         }
         
@@ -447,24 +460,36 @@ class BBDeepMobile:
         
         if "ml_model" not in loaded_state:
             loaded_state["ml_model"] = {}
-        for key in ["hits", "total_predictions"]:
+        for key in ["hits", "total_predictions", "model_performance"]:
             if key not in loaded_state["ml_model"]:
-                loaded_state["ml_model"][key] = 0
+                loaded_state["ml_model"][key] = 0 if key in ["hits", "total_predictions"] else {"RandomForest": 50, "SVM": 50, "LSTM": 50}
         
         if "settings" not in loaded_state:
             loaded_state["settings"] = {}
-        if "ml_model_type" not in loaded_state["settings"]:
-            loaded_state["settings"]["ml_model_type"] = "RandomForest"
-        if "auto_switch" not in loaded_state["settings"]:
-            loaded_state["settings"]["auto_switch"] = False
+        for key in ["current_model", "auto_switch", "rotation_interval"]:
+            if key not in loaded_state["settings"]:
+                if key == "current_model":
+                    loaded_state["settings"][key] = "RandomForest"
+                elif key == "auto_switch":
+                    loaded_state["settings"][key] = True
+                elif key == "rotation_interval":
+                    loaded_state["settings"][key] = 10
         
         return loaded_state
 
     @property
     def state(self):
         return st.session_state.app_state
+    
+    @property
+    def current_engine(self):
+        return self.ml_engines[self.current_engine_type]
 
     def register_bead(self, color):
+        # DEBUG: Verificar estado antes
+        debug_info = f"DEBUG ANTES: seq_vermelho={self.state['statistics']['seq_vermelho']}, seq_empate={self.state['statistics']['seq_empate']}"
+        print(debug_info)
+        
         # Guardar previsão atual ANTES de registar
         current_prediction, _ = self.get_next_prediction()
         
@@ -489,25 +514,32 @@ class BBDeepMobile:
         self.state["last_color"] = color
         self.state["statistics"]["total_beads"] += 1
         
-        # Atualizar estatísticas
+        # CORREÇÃO CRÍTICA: EMPATES AGORA QUEBRAM SEQUÊNCIAS!
         if color == "azul":
             self.state["statistics"]["azul_count"] += 1
-            self.state["statistics"]["seq_vermelho"] = 0
-            self.state["statistics"]["seq_empate"] = 0
+            self.state["statistics"]["seq_vermelho"] = 0  # Quebra sequência vermelha
+            self.state["statistics"]["seq_empate"] = 0    # Quebra sequência empate
         elif color == "vermelho":
             self.state["statistics"]["vermelho_count"] += 1
             self.state["statistics"]["seq_vermelho"] += 1
-            self.state["statistics"]["seq_empate"] = 0
-        else:
+            self.state["statistics"]["seq_empate"] = 0    # Quebra sequência empate
+        else:  # empate
             self.state["statistics"]["empate_count"] += 1
-            self.state["seq_empate"] += 1
-            self.state["seq_vermelho"] = 0
+            self.state["statistics"]["seq_empate"] += 1   # Cria sequência empate
+            self.state["statistics"]["seq_vermelho"] = 0  # Quebra sequência vermelha
         
         # Atualizar win rate se havia previsão
         if current_prediction:
             self.state["ml_model"]["total_predictions"] += 1
             if current_prediction == color:
                 self.state["ml_model"]["hits"] += 1
+                # Atualizar performance do modelo atual
+                current_perf = self.state["ml_model"]["model_performance"].get(self.current_engine_type, 50)
+                self.state["ml_model"]["model_performance"][self.current_engine_type] = min(95, current_perf + 2)
+            else:
+                # Penalizar modelo atual
+                current_perf = self.state["ml_model"]["model_performance"].get(self.current_engine_type, 50)
+                self.state["ml_model"]["model_performance"][self.current_engine_type] = max(5, current_perf - 1)
         
         # LÓGICA DO GALE - VERIFICAR APÓS REGISTRO
         if current_prediction and current_prediction != color:
@@ -526,9 +558,6 @@ class BBDeepMobile:
                     else:
                         # Mudou de previsão - RESETAR GALE
                         self.state["gale_count"] = 0
-            else:
-                # Sem auto-treino, não podemos verificar - manter gale count?
-                pass
         else:
             # Previsão acertou ou não havia previsão - RESETAR GALE
             self.state["gale_count"] = 0
@@ -538,39 +567,34 @@ class BBDeepMobile:
                 if self.state["statistics"]["total_beads"] % self.state["settings"]["train_interval"] == 0:
                     self.train_model(auto=True)
         
+        # DEBUG: Verificar estado depois
+        debug_info = f"DEBUG DEPOIS: seq_vermelho={self.state['statistics']['seq_vermelho']}, seq_empate={self.state['statistics']['seq_empate']}"
+        print(debug_info)
+        
         self.save_state()
 
     def train_model(self, auto=False):
+        # Treinar TODOS os modelos sempre
+        all_results = {}
+        
+        for model_type, engine in self.ml_engines.items():
+            result = engine.train_model(self.state, self.state["statistics"])
+            all_results[model_type] = result
+        
+        # Lógica de rotação automática de modelos
         if self.state["settings"]["auto_switch"]:
-            # Modo auto-switch: treina todos e escolhe o melhor, bias pro RF
-            models = ["RandomForest", "SVM", "LSTM"]
-            results = {}
-            win_rates = {}  # Usar win rate histórico
-            rf_bias = 10.0  # Bias maior pro RF pra voltar mais fácil
-            best_model = "RandomForest"
-            best_score = -1
+            training_count = self.state["ml_model"].get("training_count", 0)
             
-            for m in models:
-                engine = MLEngine(m)
-                result = engine.train_model(self.state, self.state["statistics"])
-                if result["success"]:
-                    results[m] = result
-                    # Win rate histórico + accuracy como score
-                    wr = (self.state["ml_model"]["hits"] / self.state["ml_model"]["total_predictions"] * 100) if self.state["ml_model"]["total_predictions"] > 0 else 50
-                    score = wr + result["accuracy"]
-                    if m == "RandomForest":
-                        score += rf_bias
-                    win_rates[m] = score
-                    if score > best_score:
-                        best_score = score
-                        best_model = m
-            
-            # Atualiza com o melhor
-            result = results[best_model]
-            self.ml_engine = MLEngine(best_model)
-            self.state["settings"]["ml_model_type"] = best_model
-        else:
-            result = self.ml_engine.train_model(self.state, self.state["statistics"])
+            # Alternar modelos baseado no intervalo configurado
+            if training_count % self.state["settings"]["rotation_interval"] == 0:
+                models = list(self.ml_engines.keys())
+                current_index = models.index(self.current_engine_type)
+                next_index = (current_index + 1) % len(models)
+                self.current_engine_type = models[next_index]
+                self.state["settings"]["current_model"] = self.current_engine_type
+        
+        # Usar resultados do modelo atual
+        result = all_results[self.current_engine_type]
         
         if result["success"]:
             self.state["ml_model"].update({
@@ -581,7 +605,7 @@ class BBDeepMobile:
                 "training_count": self.state["ml_model"].get("training_count", 0) + 1,
                 "model_type": result["model_type"],
                 "training_examples": result.get("training_examples", 0),
-                "active_model": result["model_type"],
+                "active_model": self.current_engine_type,
                 "features_info": result.get("features_used", "Heurísticas")
             })
             self.save_state()
@@ -622,10 +646,11 @@ class BBDeepMobile:
             "active_model": "Nenhum",
             "features_info": "Nenhum",
             "hits": 0,
-            "total_predictions": 0
+            "total_predictions": 0,
+            "model_performance": {"RandomForest": 50, "SVM": 50, "LSTM": 50}
         })
         self.save_state()
-        self.ml_engine = MLEngine(self.state["settings"]["ml_model_type"])
+        self._init_all_engines()
 
 def main():
     st.set_page_config(
@@ -635,7 +660,7 @@ def main():
         initial_sidebar_state="collapsed"
     )
     
-    # CSS Ultra Compacto para Mobile (ajustado para bead road crescer pra baixo)
+    # CSS Ultra Compacto para Mobile
     st.markdown("""
     <style>
     .main-container {
@@ -711,11 +736,11 @@ def main():
         padding: 10px;
         background-color: #f0f0f0;
         border-radius: 8px;
-        max-height: 220px;  /* Ajustado pra caber 6 beads + padding */
+        max-height: 220px;
     }
     .bead-column {
         display: inline-flex;
-        flex-direction: column;  /* Mudado pra column normal, beads crescem pra baixo */
+        flex-direction: column;
         margin-right: 8px;
         width: 32px;
         justify-content: flex-start;
@@ -731,7 +756,20 @@ def main():
         align-items: center;
         border: 1px solid #ddd;
         border-radius: 50%;
-        margin-bottom: 4px;  /* Mais espaço entre beads */
+        margin-bottom: 4px;
+    }
+    .model-performance {
+        font-size: 12px;
+        color: #666;
+        margin-top: 2px;
+    }
+    .debug-info {
+        font-size: 10px;
+        color: #888;
+        background: #f5f5f5;
+        padding: 5px;
+        border-radius: 5px;
+        margin: 5px 0;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -745,6 +783,13 @@ def main():
         st.session_state.app = BBDeepMobile()
     
     app = st.session_state.app
+    
+    # DEBUG INFO
+    with st.expander("🔍 Debug Info", expanded=False):
+        st.write(f"**Sequência Vermelha:** {app.state['statistics']['seq_vermelho']}")
+        st.write(f"**Sequência Empate:** {app.state['statistics']['seq_empate']}")
+        st.write(f"**Modelo Atual:** {app.current_engine_type}")
+        st.write(f"**Total Beads:** {app.state['statistics']['total_beads']}")
     
     # PREVISÃO COM INDICADOR GALE
     next_color, confidence = app.get_next_prediction()
@@ -772,9 +817,9 @@ def main():
         """, unsafe_allow_html=True)
         
         if app.state["ml_model"]["trained"]:
-            model_info = f"🎯 {app.state['ml_model']['model_type']} | {app.state['ml_model']['accuracy']:.1f}% precisão"
-            if "features_info" in app.state["ml_model"]:
-                model_info += f" | {app.state['ml_model']['features_info']}"
+            current_model = app.current_engine_type
+            model_perf = app.state["ml_model"]["model_performance"].get(current_model, 50)
+            model_info = f"🎯 {current_model} | {app.state['ml_model']['accuracy']:.1f}% precisão | Performance: {model_perf}%"
             st.caption(model_info)
     else:
         st.info("📊 Registe beads e treine o modelo")
@@ -803,7 +848,7 @@ def main():
             app.register_bead('empate')
             st.rerun()
     
-    # VISUALIZAÇÃO DO BEAD ROAD (movido para aqui, abaixo dos registos)
+    # VISUALIZAÇÃO DO BEAD ROAD
     st.markdown("**Bead Road:**")
     beads = app.state["beads"]
     current_column = app.state["current_column"]
@@ -843,7 +888,7 @@ def main():
     else:
         st.caption("Sem beads registados ainda.")
     
-    # ESTATÍSTICAS (agora abaixo do bead road)
+    # ESTATÍSTICAS
     st.markdown("---")
     
     col1, col2, col3 = st.columns(3)
@@ -895,26 +940,35 @@ def main():
     with st.popover("⚙️ Configurações", use_container_width=True):
         auto_train = st.checkbox("Auto-treino", value=app.state["settings"]["auto_train"], key="auto_train")
         train_interval = st.slider("Intervalo:", 1, 20, app.state["settings"]["train_interval"], key="train_interval")
-        ml_model_type = st.selectbox("Tipo de Modelo ML", ["RandomForest", "SVM", "LSTM"], index=["RandomForest", "SVM", "LSTM"].index(app.state["settings"]["ml_model_type"]), key="ml_model_type")
-        auto_switch = st.checkbox("Auto-Switch (alterna se errar muito, prioriza RF)", value=app.state["settings"]["auto_switch"], key="auto_switch")
+        auto_switch = st.checkbox("Auto-Switch (rotação automática)", value=app.state["settings"]["auto_switch"], key="auto_switch")
+        rotation_interval = st.slider("Rotação a cada:", 5, 50, app.state["settings"]["rotation_interval"], key="rotation_interval")
+        
+        # Mostrar performance dos modelos
+        st.markdown("**Performance dos Modelos:**")
+        for model, perf in app.state["ml_model"]["model_performance"].items():
+            current_indicator = " 🟢" if model == app.current_engine_type else ""
+            st.write(f"{model}: {perf}%{current_indicator}")
         
         if st.button("💾 Aplicar", key="save_config"):
             app.state["settings"]["auto_train"] = auto_train
             app.state["settings"]["train_interval"] = train_interval
-            app.state["settings"]["ml_model_type"] = ml_model_type
             app.state["settings"]["auto_switch"] = auto_switch
-            app.ml_engine = MLEngine(ml_model_type)  # Reinicializa engine com novo tipo
+            app.state["settings"]["rotation_interval"] = rotation_interval
             app.save_state()
             st.rerun()
     
     with st.popover("📊 Info ML", use_container_width=True):
-        st.write(f"**Modelo:** {app.state['ml_model']['model_type']}")
+        st.write(f"**Modelo Atual:** {app.current_engine_type}")
         st.write(f"**Precisão:** {app.state['ml_model']['accuracy']:.1f}%")
         win_rate = (app.state['ml_model']['hits'] / app.state['ml_model']['total_predictions'] * 100) if app.state['ml_model']['total_predictions'] > 0 else 0
         st.write(f"**Win Rate Real:** {win_rate:.1f}% ({app.state['ml_model']['hits']}/{app.state['ml_model']['total_predictions']})")
         st.write(f"**Exemplos treino:** {app.state['ml_model']['training_examples']}")
         st.write(f"**Total treinos:** {app.state['ml_model']['training_count']}")
         st.write(f"**Gale atual:** {app.state['gale_count']}")
+        
+        st.write("**Performance dos Modelos:**")
+        for model, perf in app.state["ml_model"]["model_performance"].items():
+            st.write(f"- {model}: {perf}%")
         
         if app.state['current_column']:
             st.write("**Últimas jogadas:**")
@@ -928,7 +982,7 @@ def main():
     
     # MENSAGEM FINAL
     st.markdown("---")
-    st.markdown("<div style='text-align: center; color: #666; font-size: 14px;'>🤖 ML Real + GALE | feito com ❤️</div>", unsafe_allow_html=True)
+    st.markdown("<div style='text-align: center; color: #666; font-size: 14px;'>🤖 ML Real + GALE | 3 Modelos | Debug Ativo | feito com ❤️</div>", unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
