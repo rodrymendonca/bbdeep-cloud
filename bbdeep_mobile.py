@@ -13,9 +13,11 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
+import glob
+import io
 warnings.filterwarnings('ignore')
 
-# ===== DATA MANAGER SIMPLIFICADO =====
+# ===== DATA MANAGER COM EXPORTAÇÃO =====
 class DataManager:
     def __init__(self, data_dir="data"):
         self.data_dir = data_dir
@@ -93,6 +95,125 @@ class DataManager:
         except Exception as e:
             self.logger.error(f"Erro ao guardar dados de treino: {e}")
             return False
+
+    # ===== MÉTODOS DE EXPORTAÇÃO =====
+    def export_training_history_csv(self):
+        """Exporta histórico de treinos para CSV"""
+        try:
+            # Encontrar todos os ficheiros de treino
+            pattern = os.path.join(self.data_dir, "bbdeep_training_*.json")
+            training_files = glob.glob(pattern)
+            
+            if not training_files:
+                return None, "Nenhum dado de treino encontrado"
+            
+            training_data = []
+            for file_path in training_files:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    training_data.append(data)
+            
+            # Converter para DataFrame
+            df = pd.DataFrame(training_data)
+            
+            # Ordenar por timestamp
+            if 'timestamp' in df.columns:
+                df['timestamp'] = pd.to_datetime(df['timestamp'])
+                df = df.sort_values('timestamp')
+            
+            # Converter para CSV
+            csv_data = df.to_csv(index=False, encoding='utf-8')
+            return csv_data, f"Exportados {len(training_data)} registos de treino"
+            
+        except Exception as e:
+            self.logger.error(f"Erro ao exportar histórico de treinos: {e}")
+            return None, f"Erro na exportação: {str(e)}"
+    
+    def export_logs_csv(self):
+        """Exporta logs para CSV"""
+        try:
+            log_file = 'bbdeep_logs.log'
+            if not os.path.exists(log_file):
+                return None, "Ficheiro de logs não encontrado"
+            
+            # Ler logs
+            with open(log_file, 'r', encoding='utf-8') as f:
+                log_lines = f.readlines()
+            
+            # Parse dos logs (formato: timestamp - level - message)
+            log_data = []
+            for line in log_lines:
+                parts = line.strip().split(' - ', 2)
+                if len(parts) == 3:
+                    timestamp, level, message = parts
+                    log_data.append({
+                        'timestamp': timestamp,
+                        'level': level,
+                        'message': message
+                    })
+            
+            if not log_data:
+                return None, "Nenhum log válido encontrado"
+            
+            # Converter para DataFrame e CSV
+            df = pd.DataFrame(log_data)
+            csv_data = df.to_csv(index=False, encoding='utf-8')
+            return csv_data, f"Exportados {len(log_data)} entradas de log"
+            
+        except Exception as e:
+            self.logger.error(f"Erro ao exportar logs: {e}")
+            return None, f"Erro na exportação: {str(e)}"
+    
+    def export_complete_data_json(self):
+        """Exporta todos os dados completos em JSON"""
+        try:
+            # Dados principais
+            app_state = self.load_data("app_state.json", {})
+            
+            # Histórico de treinos
+            pattern = os.path.join(self.data_dir, "bbdeep_training_*.json")
+            training_files = glob.glob(pattern)
+            training_history = []
+            
+            for file_path in training_files:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    training_history.append(json.load(f))
+            
+            # Logs (últimas 1000 linhas)
+            log_data = []
+            log_file = 'bbdeep_logs.log'
+            if os.path.exists(log_file):
+                with open(log_file, 'r', encoding='utf-8') as f:
+                    log_lines = f.readlines()[-1000:]  # Últimas 1000 linhas
+                    for line in log_lines:
+                        parts = line.strip().split(' - ', 2)
+                        if len(parts) == 3:
+                            timestamp, level, message = parts
+                            log_data.append({
+                                'timestamp': timestamp,
+                                'level': level,
+                                'message': message
+                            })
+            
+            # Compilar todos os dados
+            complete_data = {
+                'export_timestamp': datetime.now().isoformat(),
+                'app_state': app_state,
+                'training_history': training_history,
+                'recent_logs': log_data,
+                'summary': {
+                    'total_trainings': len(training_history),
+                    'total_logs': len(log_data),
+                    'beads_count': app_state.get('statistics', {}).get('total_beads', 0)
+                }
+            }
+            
+            json_data = json.dumps(complete_data, indent=2, ensure_ascii=False)
+            return json_data, f"Dados exportados: {len(training_history)} treinos, {len(log_data)} logs"
+            
+        except Exception as e:
+            self.logger.error(f"Erro ao exportar dados completos: {e}")
+            return None, f"Erro na exportação: {str(e)}"
 
 # ===== ML ENGINE (mantém-se igual) =====
 class MLEngine:
@@ -784,6 +905,7 @@ def main():
     .bead-road-container { overflow-x: auto; white-space: nowrap; margin: 10px 0; padding: 10px; background-color: #f0f0f0; border-radius: 8px; max-height: 220px; }
     .bead-column { display: inline-flex; flex-direction: column; margin-right: 8px; width: 32px; justify-content: flex-start; align-items: center; }
     .bead { font-size: 24px; line-height: 30px; width: 30px; height: 30px; display: flex; justify-content: center; align-items: center; border: 1px solid #ddd; border-radius: 50%; margin-bottom: 4px; }
+    .export-section { background-color: #f8f9fa; padding: 15px; border-radius: 10px; margin: 10px 0; }
     </style>
     """, unsafe_allow_html=True)
     
@@ -1001,6 +1123,60 @@ def main():
             app.ml_engine = MLEngine(ml_model_type)
             app.save_state()
             st.rerun()
+        
+        # ===== SECÇÃO DE EXPORTAÇÃO =====
+        st.markdown("---")
+        st.markdown("### 📤 Exportar Dados")
+        
+        col_export1, col_export2 = st.columns(2)
+        
+        with col_export1:
+            if st.button("📊 Exportar Treinos (CSV)", use_container_width=True):
+                csv_data, message = app.data_manager.export_training_history_csv()
+                if csv_data:
+                    st.download_button(
+                        label="⬇️ Descarregar CSV",
+                        data=csv_data,
+                        file_name=f"bbdeep_training_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                        mime="text/csv",
+                        use_container_width=True
+                    )
+                    st.success(message)
+                else:
+                    st.error(message)
+            
+            if st.button("📝 Exportar Logs (CSV)", use_container_width=True):
+                csv_data, message = app.data_manager.export_logs_csv()
+                if csv_data:
+                    st.download_button(
+                        label="⬇️ Descarregar CSV",
+                        data=csv_data,
+                        file_name=f"bbdeep_logs_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                        mime="text/csv",
+                        use_container_width=True
+                    )
+                    st.success(message)
+                else:
+                    st.error(message)
+        
+        with col_export2:
+            if st.button("📁 Exportar Todos Dados (JSON)", use_container_width=True):
+                json_data, message = app.data_manager.export_complete_data_json()
+                if json_data:
+                    st.download_button(
+                        label="⬇️ Descarregar JSON",
+                        data=json_data,
+                        file_name=f"bbdeep_complete_{datetime.now().strftime('%Y%m%d_%H%M')}.json",
+                        mime="application/json",
+                        use_container_width=True
+                    )
+                    st.success(message)
+                else:
+                    st.error(message)
+            
+            if st.button("🔄 Limpar Dados Antigos", use_container_width=True):
+                # Implementar limpeza de dados antigos se necessário
+                st.info("Funcionalidade de limpeza em desenvolvimento")
     
     with st.popover("📊 Info ML", use_container_width=True):
         st.write(f"**Modelo Ativo:** {app.state['ml_model']['active_model']}")
@@ -1026,7 +1202,7 @@ def main():
     st.markdown('</div>', unsafe_allow_html=True)
     
     st.markdown("---")
-    st.markdown("<div style='text-align: center; color: #666; font-size: 14px;'>🤖 ML Inteligente + 1 GALE | Armazenamento Local | feito com ❤️</div>", unsafe_allow_html=True)
+    st.markdown("<div style='text-align: center; color: #666; font-size: 14px;'>🤖 ML Inteligente + 1 GALE | Exportação CSV/JSON | feito com ❤️</div>", unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
