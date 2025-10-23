@@ -15,9 +15,10 @@ import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 import glob
 import io
+import tempfile
 warnings.filterwarnings('ignore')
 
-# ===== DATA MANAGER COM EXPORTAÇÃO =====
+# ===== DATA MANAGER COM EXPORTAÇÃO/IMPORTAÇÃO COMPLETA =====
 class DataManager:
     def __init__(self, data_dir="data"):
         self.data_dir = data_dir
@@ -100,7 +101,6 @@ class DataManager:
     def export_training_history_csv(self):
         """Exporta histórico de treinos para CSV"""
         try:
-            # Encontrar todos os ficheiros de treino
             pattern = os.path.join(self.data_dir, "bbdeep_training_*.json")
             training_files = glob.glob(pattern)
             
@@ -113,15 +113,12 @@ class DataManager:
                     data = json.load(f)
                     training_data.append(data)
             
-            # Converter para DataFrame
             df = pd.DataFrame(training_data)
             
-            # Ordenar por timestamp
             if 'timestamp' in df.columns:
                 df['timestamp'] = pd.to_datetime(df['timestamp'])
                 df = df.sort_values('timestamp')
             
-            # Converter para CSV
             csv_data = df.to_csv(index=False, encoding='utf-8')
             return csv_data, f"Exportados {len(training_data)} registos de treino"
             
@@ -136,11 +133,9 @@ class DataManager:
             if not os.path.exists(log_file):
                 return None, "Ficheiro de logs não encontrado"
             
-            # Ler logs
             with open(log_file, 'r', encoding='utf-8') as f:
                 log_lines = f.readlines()
             
-            # Parse dos logs (formato: timestamp - level - message)
             log_data = []
             for line in log_lines:
                 parts = line.strip().split(' - ', 2)
@@ -155,7 +150,6 @@ class DataManager:
             if not log_data:
                 return None, "Nenhum log válido encontrado"
             
-            # Converter para DataFrame e CSV
             df = pd.DataFrame(log_data)
             csv_data = df.to_csv(index=False, encoding='utf-8')
             return csv_data, f"Exportados {len(log_data)} entradas de log"
@@ -167,10 +161,8 @@ class DataManager:
     def export_complete_data_json(self):
         """Exporta todos os dados completos em JSON"""
         try:
-            # Dados principais
             app_state = self.load_data("app_state.json", {})
             
-            # Histórico de treinos
             pattern = os.path.join(self.data_dir, "bbdeep_training_*.json")
             training_files = glob.glob(pattern)
             training_history = []
@@ -179,12 +171,11 @@ class DataManager:
                 with open(file_path, 'r', encoding='utf-8') as f:
                     training_history.append(json.load(f))
             
-            # Logs (últimas 1000 linhas)
             log_data = []
             log_file = 'bbdeep_logs.log'
             if os.path.exists(log_file):
                 with open(log_file, 'r', encoding='utf-8') as f:
-                    log_lines = f.readlines()[-1000:]  # Últimas 1000 linhas
+                    log_lines = f.readlines()[-1000:]
                     for line in log_lines:
                         parts = line.strip().split(' - ', 2)
                         if len(parts) == 3:
@@ -195,7 +186,6 @@ class DataManager:
                                 'message': message
                             })
             
-            # Compilar todos os dados
             complete_data = {
                 'export_timestamp': datetime.now().isoformat(),
                 'app_state': app_state,
@@ -214,6 +204,152 @@ class DataManager:
         except Exception as e:
             self.logger.error(f"Erro ao exportar dados completos: {e}")
             return None, f"Erro na exportação: {str(e)}"
+
+    def export_current_state_json(self):
+        """Exporta apenas o estado atual em JSON"""
+        try:
+            app_state = self.load_data("app_state.json", {})
+            
+            current_state = {
+                'export_timestamp': datetime.now().isoformat(),
+                'app_state': app_state,
+                'summary': {
+                    'beads_count': app_state.get('statistics', {}).get('total_beads', 0),
+                    'total_predictions': app_state.get('ml_model', {}).get('total_predictions', 0),
+                    'win_rate': app_state.get('ml_model', {}).get('hits', 0) / app_state.get('ml_model', {}).get('total_predictions', 1) * 100
+                }
+            }
+            
+            json_data = json.dumps(current_state, indent=2, ensure_ascii=False)
+            return json_data, "Estado atual exportado com sucesso"
+            
+        except Exception as e:
+            self.logger.error(f"Erro ao exportar estado atual: {e}")
+            return None, f"Erro na exportação: {str(e)}"
+
+    # ===== MÉTODOS DE IMPORTAÇÃO =====
+    def import_beads_data(self, uploaded_file, merge_strategy="append"):
+        """Importa dados de beads de um ficheiro JSON"""
+        try:
+            # Ler o ficheiro carregado
+            file_content = uploaded_file.read().decode('utf-8')
+            imported_data = json.loads(file_content)
+            
+            # Carregar estado atual
+            current_state = self.load_data("app_state.json", {})
+            
+            if 'app_state' not in imported_data:
+                return False, "Formato inválido: ficheiro não contém dados da aplicação"
+            
+            imported_state = imported_data['app_state']
+            
+            # Estratégias de importação
+            if merge_strategy == "replace":
+                # Substituir completamente
+                new_state = imported_state
+                message = "Dados substituídos completamente"
+            elif merge_strategy == "append":
+                # Adicionar beads ao histórico existente
+                new_state = current_state.copy()
+                
+                # Adicionar beads importados
+                imported_beads = imported_state.get('beads', [])
+                current_beads = new_state.get('beads', [])
+                new_state['beads'] = current_beads + imported_beads
+                
+                # Adicionar coluna atual se existir
+                imported_current = imported_state.get('current_column', [])
+                if imported_current:
+                    if 'current_column' not in new_state or not new_state['current_column']:
+                        new_state['current_column'] = imported_current
+                    else:
+                        # Se ambas têm coluna atual, converter a importada para beads
+                        new_state['beads'].append(imported_current)
+                
+                # Atualizar estatísticas
+                self._update_statistics_after_import(new_state, imported_state)
+                message = f"Dados adicionados: {len(imported_beads)} colunas importadas"
+            else:
+                return False, "Estratégia de importação inválida"
+            
+            # Guardar novo estado
+            self.save_data(new_state, "app_state.json")
+            
+            self.logger.info(f"Dados importados: {message}")
+            return True, message
+            
+        except Exception as e:
+            self.logger.error(f"Erro ao importar dados: {e}")
+            return False, f"Erro na importação: {str(e)}"
+    
+    def _update_statistics_after_import(self, new_state, imported_state):
+        """Atualiza estatísticas após importação"""
+        try:
+            # Recalcular estatísticas baseadas nos beads
+            total_beads = 0
+            azul_count = 0
+            vermelho_count = 0
+            empate_count = 0
+            
+            # Contar beads das colunas completas
+            for column in new_state.get('beads', []):
+                for bead in column:
+                    color = bead.get('color', '')
+                    total_beads += 1
+                    if color == 'azul':
+                        azul_count += 1
+                    elif color == 'vermelho':
+                        vermelho_count += 1
+                    elif color == 'empate':
+                        empate_count += 1
+            
+            # Contar beads da coluna atual
+            for bead in new_state.get('current_column', []):
+                color = bead.get('color', '')
+                total_beads += 1
+                if color == 'azul':
+                    azul_count += 1
+                elif color == 'vermelho':
+                    vermelho_count += 1
+                elif color == 'empate':
+                    empate_count += 1
+            
+            # Atualizar estatísticas
+            if 'statistics' not in new_state:
+                new_state['statistics'] = {}
+            
+            new_state['statistics'].update({
+                'total_beads': total_beads,
+                'azul_count': azul_count,
+                'vermelho_count': vermelho_count,
+                'empate_count': empate_count,
+                'seq_vermelho': imported_state.get('statistics', {}).get('seq_vermelho', 0),
+                'seq_empate': imported_state.get('statistics', {}).get('seq_empate', 0)
+            })
+            
+        except Exception as e:
+            self.logger.error(f"Erro ao atualizar estatísticas: {e}")
+
+    def import_training_data(self, uploaded_file):
+        """Importa dados de treino específicos"""
+        try:
+            file_content = uploaded_file.read().decode('utf-8')
+            training_data = json.loads(file_content)
+            
+            # Guardar como novo ficheiro de treino
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"imported_training_{timestamp}.json"
+            filepath = self.get_file_path(filename)
+            
+            with open(filepath, 'w', encoding='utf-8') as f:
+                json.dump(training_data, f, indent=2, ensure_ascii=False)
+            
+            self.logger.info(f"Dados de treino importados: {filename}")
+            return True, f"Dados de treino importados: {filename}"
+            
+        except Exception as e:
+            self.logger.error(f"Erro ao importar dados de treino: {e}")
+            return False, f"Erro na importação: {str(e)}"
 
 # ===== ML ENGINE (mantém-se igual) =====
 class MLEngine:
@@ -1124,7 +1260,7 @@ def main():
             app.save_state()
             st.rerun()
         
-        # ===== SECÇÃO DE EXPORTAÇÃO =====
+        # ===== SECÇÃO DE EXPORTAÇÃO/IMPORTAÇÃO =====
         st.markdown("---")
         st.markdown("### 📤 Exportar Dados")
         
@@ -1145,6 +1281,21 @@ def main():
                 else:
                     st.error(message)
             
+            if st.button("💾 Exportar Estado Atual", use_container_width=True):
+                json_data, message = app.data_manager.export_current_state_json()
+                if json_data:
+                    st.download_button(
+                        label="⬇️ Descarregar JSON",
+                        data=json_data,
+                        file_name=f"bbdeep_state_{datetime.now().strftime('%Y%m%d_%H%M')}.json",
+                        mime="application/json",
+                        use_container_width=True
+                    )
+                    st.success(message)
+                else:
+                    st.error(message)
+        
+        with col_export2:
             if st.button("📝 Exportar Logs (CSV)", use_container_width=True):
                 csv_data, message = app.data_manager.export_logs_csv()
                 if csv_data:
@@ -1158,9 +1309,8 @@ def main():
                     st.success(message)
                 else:
                     st.error(message)
-        
-        with col_export2:
-            if st.button("📁 Exportar Todos Dados (JSON)", use_container_width=True):
+            
+            if st.button("📁 Exportar Todos Dados", use_container_width=True):
                 json_data, message = app.data_manager.export_complete_data_json()
                 if json_data:
                     st.download_button(
@@ -1173,10 +1323,53 @@ def main():
                     st.success(message)
                 else:
                     st.error(message)
-            
-            if st.button("🔄 Limpar Dados Antigos", use_container_width=True):
-                # Implementar limpeza de dados antigos se necessário
-                st.info("Funcionalidade de limpeza em desenvolvimento")
+        
+        # ===== SECÇÃO DE IMPORTAÇÃO =====
+        st.markdown("---")
+        st.markdown("### 📥 Importar Dados")
+        
+        st.info("Importe dados para alimentar o Random Forest com mais dados históricos")
+        
+        import_strategy = st.radio(
+            "Estratégia de importação:",
+            ["append", "replace"],
+            format_func=lambda x: "Adicionar aos dados atuais" if x == "append" else "Substituir dados atuais",
+            help="Adicionar: mantém dados atuais e adiciona os importados. Substituir: remove dados atuais e usa apenas importados."
+        )
+        
+        uploaded_file = st.file_uploader(
+            "Carregar ficheiro JSON de dados",
+            type=['json'],
+            help="Carregue um ficheiro JSON exportado anteriormente da aplicação"
+        )
+        
+        if uploaded_file is not None:
+            if st.button("🚀 Importar Dados", use_container_width=True):
+                with st.spinner("A importar dados..."):
+                    success, message = app.data_manager.import_beads_data(uploaded_file, import_strategy)
+                    
+                    if success:
+                        st.success(f"✅ {message}")
+                        st.info("💡 Os dados foram importados. Execute um treino manual para o modelo aprender com os novos dados.")
+                        
+                        # Mostrar estatísticas após importação
+                        beads_count = app.state["statistics"]["total_beads"]
+                        st.metric("Total de beads após importação", beads_count)
+                        
+                        # Sugerir treino
+                        if st.button("🎯 Treinar com Novos Dados", use_container_width=True):
+                            if app.train_model():
+                                st.rerun()
+                    else:
+                        st.error(f"❌ {message}")
+        
+        # Limpar dados
+        st.markdown("---")
+        if st.button("🗑️ Limpar Todos os Dados", use_container_width=True, type="secondary"):
+            if st.checkbox("Confirmar que quero apagar TODOS os dados"):
+                app.reset_model()
+                st.success("✅ Todos os dados foram limpos")
+                st.rerun()
     
     with st.popover("📊 Info ML", use_container_width=True):
         st.write(f"**Modelo Ativo:** {app.state['ml_model']['active_model']}")
@@ -1202,7 +1395,7 @@ def main():
     st.markdown('</div>', unsafe_allow_html=True)
     
     st.markdown("---")
-    st.markdown("<div style='text-align: center; color: #666; font-size: 14px;'>🤖 ML Inteligente + 1 GALE | Exportação CSV/JSON | feito com ❤️</div>", unsafe_allow_html=True)
+    st.markdown("<div style='text-align: center; color: #666; font-size: 14px;'>🤖 ML Inteligente + 1 GALE | Exportação/Importação Completa | feito com ❤️</div>", unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
